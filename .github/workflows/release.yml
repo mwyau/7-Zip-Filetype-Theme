@@ -66,10 +66,31 @@ jobs:
     needs: validate
     uses: ./.github/workflows/clamav-scan.yml
 
-  publish:
-    name: Publish approved release
+  approval_config:
+    name: Verify owner approval protection
     needs: [validate, clamav]
     if: github.ref == 'refs/heads/master' && needs.validate.result == 'success' && needs.clamav.result == 'success'
+    runs-on: ubuntu-26.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Require owner approval with administrator bypass disabled
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/verify-release-environment.mjs
+
+  publish:
+    name: Publish approved release
+    needs: [validate, clamav, approval_config]
+    if: github.ref == 'refs/heads/master' && needs.validate.result == 'success' && needs.clamav.result == 'success' && needs.approval_config.result == 'success'
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -80,6 +101,14 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Recheck approval protection before publication
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/verify-release-environment.mjs
       - uses: actions/download-artifact@v4
         with:
           name: scan-input-${{ github.sha }}

@@ -9,6 +9,7 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 const hashFile = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const result = (status, stdout = '', stderr = '', error = null) => ({ status, stdout: String(stdout), stderr: String(stderr), error });
+const hasCommandWarnings = (output) => /(?:^|\n)\s*(?:WARNING|ERROR):|(?:^|\n)\s*Warnings:\s*[1-9]\d*/i.test(output);
 export function runCommand(command, args, options = {}) {
   const p = spawnSync(command, args, { cwd: options.cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, windowsHide: true });
   return result(p.status ?? 2, p.stdout, p.stderr, p.error?.message ?? null);
@@ -16,6 +17,8 @@ export function runCommand(command, args, options = {}) {
 function mustRun(runner, command, args, label, cwd) {
   const p = runner(command, args, { cwd });
   if (p.error || p.status !== 0) throw new Error(`${label} failed (exit ${p.status}): ${p.error || p.stderr || p.stdout}`);
+  const output = `${p.stdout}\n${p.stderr}`;
+  if (hasCommandWarnings(output)) throw new Error(`${label} reported a warning despite exit zero: ${output}`);
   return p;
 }
 function listFiles(base) {
@@ -81,7 +84,7 @@ export function scanArtifacts({ rootDir, reportFile, repository = repositoryRoot
     } else if (service.status !== 3) throw new Error(`Cannot determine clamav-freshclam service state (status ${service.status}): ${service.stderr}`);
     const update = runner(freshclamCommand, freshclamArgs);
     report.signatureUpdate = { status: update.status === 0 ? 'updated-or-current' : 'failed', completedAt: new Date().toISOString(), exitCode: update.status, output: `${update.stdout}\n${update.stderr}`.trim() };
-    if (update.error || update.status !== 0) throw new Error(`freshclam failed (exit ${update.status}): ${update.error || update.stderr || update.stdout}`);
+    if (update.error || update.status !== 0 || hasCommandWarnings(`${update.stdout}\n${update.stderr}`)) throw new Error(`freshclam failed or reported a warning (exit ${update.status}): ${update.error || update.stderr || update.stdout}`);
 
     const engine = mustRun(runner, 'clamscan', ['--version'], 'ClamAV engine version');
     report.engineVersion = engine.stdout.trim().split(/[\r\n]/)[0];

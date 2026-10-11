@@ -26,18 +26,18 @@ function fixture() {
   }
   return { root, input: path.join(root, 'input'), db, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
 }
-function mockRunner({ updateStatus = 0, scannerStatus = 0, scannerOutput = null, serviceActive = false, dbTime = fixedNow, engineVersion = 'ClamAV 1.5.4/123/2026' } = {}) {
+function mockRunner({ updateStatus = 0, updateWarning = false, scannerStatus = 0, scannerOutput = null, serviceActive = false, dbTime = fixedNow, engineVersion = 'ClamAV 1.5.4/123/2026', archiveListingWarning = false, archiveExtractionWarning = false } = {}) {
   return (command, args) => {
     if (command === 'systemctl' && args[0] === 'is-active') return { status: serviceActive ? 0 : 3, stdout: '', stderr: '' };
     if (command === 'sudo' && args[0] === 'systemctl') { serviceActive = false; return { status: 0, stdout: '', stderr: '' }; }
-    if (command === 'sudo' && args[0] === 'freshclam') return { status: updateStatus, stdout: 'freshclam updated/current databases', stderr: '' };
+    if (command === 'sudo' && args[0] === 'freshclam') return { status: updateStatus, stdout: 'freshclam updated/current databases', stderr: updateWarning ? 'WARNING: database update was incomplete' : '' };
     if (command === 'clamscan' && args[0] === '--version') return { status: 0, stdout: `${engineVersion}\n`, stderr: '' };
     if (command === 'sigtool') return { status: 0, stdout: `File: ${path.basename(args.at(-1))}\nBuild time: ${new Date(dbTime).toUTCString()}\nVersion: 42\nSignatures: 987654\nVerification OK.\n`, stderr: '' };
     if (command === '7z' && args[0] === 'l') {
       const archive = args.at(-1), name = path.basename(archive), [arch, ...slugParts] = name.slice(0, -3).split('-').reverse();
       const slug = slugParts.reverse().join('-'); const theme = [...manifest.filetypes, manifest.ribbon].find((item) => item.slug === slug);
       const binary = theme.slug === manifest.ribbon.slug ? '7zFM.exe' : '7z.dll';
-      return { status: 0, stdout: `Path = ${name}\nType = 7z\n\n----------\nPath = ${binary}\nPath = 7-Zip-License.txt\n`, stderr: '' };
+      return { status: 0, stdout: `Path = ${name}\nType = 7z\n\n----------\nPath = ${binary}\nPath = 7-Zip-License.txt\n`, stderr: archiveListingWarning ? 'WARNING: archive listing was incomplete' : '' };
     }
     if (command === '7z' && args[0] === 'x') {
       const dest = args.find((arg) => arg.startsWith('-o')).slice(2), name = path.basename(args.at(-1)), [arch, ...slugParts] = name.slice(0, -3).split('-').reverse();
@@ -47,7 +47,7 @@ function mockRunner({ updateStatus = 0, scannerStatus = 0, scannerOutput = null,
       // Copy the corresponding raw fixture binary from the supplied test input root.
       const raw = path.join(globalThis.__clamavFixtureInput, 'packages', arch, slug, binary);
       fs.copyFileSync(raw, path.join(dest, binary)); fs.writeFileSync(path.join(dest, '7-Zip-License.txt'), 'license');
-      return { status: 0, stdout: 'Everything is Ok', stderr: '' };
+      return { status: 0, stdout: 'Everything is Ok', stderr: archiveExtractionWarning ? 'WARNING: one archive member could not be extracted' : '' };
     }
     if (command === 'clamscan') return { status: scannerStatus, stdout: scannerOutput ?? `----------- SCAN SUMMARY -----------\nScanned files: ${args.length - 6}\nInfected files: ${scannerStatus === 1 ? 1 : 0}\n${scannerStatus === 1 ? 'Simulated.Threat FOUND' : ''}`, stderr: '' };
     return { status: 0, stdout: '', stderr: '' };
@@ -88,6 +88,9 @@ test('ClamAV gate rejects failed freshclam updates and missing signature databas
   const missing = fixture(); fs.unlinkSync(path.join(missing.db, 'daily.cvd'));
   try { assert.throws(() => scanArtifacts({ rootDir: missing.input, reportFile: path.join(missing.root, 'r.json'), repository, dbDir: missing.db, now: fixedNow, runner: mockRunner() }), /Missing required ClamAV daily/); }
   finally { missing.cleanup(); }
+  const warning = runFixture({ updateWarning: true });
+  try { assert.match(warning.error.message, /freshclam failed or reported a warning/); assert.equal(warning.report.verdict, 'FAILED'); }
+  finally { warning.f.cleanup(); }
 });
 test('ClamAV gate rejects stale signature databases', () => {
   const result = runFixture({ dbTime: fixedNow - 72 * 60 * 60 * 1000 });
@@ -114,6 +117,11 @@ test('ClamAV gate rejects incomplete/limited scan warnings even with exit zero',
   const short = runFixture({ scannerStatus: 0, scannerOutput: 'Scanned files: 23\nInfected files: 0' });
   try { assert.match(short.error.message, /scan appears incomplete/); assert.equal(short.report.verdict, 'FAILED'); }
   finally { short.f.cleanup(); }
+});
+test('ClamAV gate rejects archive extraction warnings even when 7-Zip exits zero', () => {
+  const result = runFixture({ archiveExtractionWarning: true });
+  try { assert.match(result.error.message, /reported a warning despite exit zero/); assert.equal(result.report.verdict, 'FAILED'); assert.equal(result.report.scanExitCode, null); }
+  finally { result.f.cleanup(); }
 });
 test('post-download verification rejects changed or missing scanned artifacts', () => {
   const { f, report } = runFixture();

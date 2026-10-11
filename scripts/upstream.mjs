@@ -11,6 +11,7 @@ export function selectReleaseAssets(release) {
   if (release.draft || release.prerelease || !release.tag_name) throw new Error('Latest upstream release is draft, prerelease, or has no tag');
   const version = release.tag_name;
   parseVersion(version);
+  if (!Number.isSafeInteger(release.id) || release.id <= 0 || release.html_url !== `https://github.com/ip7z/7zip/releases/tag/${version}`) throw new Error(`Official release identity metadata is invalid for ${version}`);
   const expected = { x86: `7z${version.replace('.', '')}.exe`, x64: `7z${version.replace('.', '')}-x64.exe` };
   const assets = {};
   for (const [arch, filename] of Object.entries(expected)) {
@@ -26,7 +27,13 @@ export function selectReleaseAssets(release) {
 }
 export function lockNeedsUpdate(lock, current) {
   if (compareVersions(current.version, lock.version) < 0) return false;
-  return current.version !== lock.version || Object.entries(current.assets).some(([arch, asset]) => lock.assets?.[arch]?.sha256 !== asset.sha256 || lock.assets?.[arch]?.size !== asset.size);
+  return current.version !== lock.version
+    || current.releaseId !== lock.releaseId
+    || current.releaseUrl !== lock.releaseUrl
+    || Object.entries(current.assets).some(([arch, asset]) => lock.assets?.[arch]?.sha256 !== asset.sha256 || lock.assets?.[arch]?.size !== asset.size || lock.assets?.[arch]?.url !== asset.url)
+    || current.extractor?.sha256 !== lock.extractor?.sha256
+    || current.extractor?.size !== lock.extractor?.size
+    || current.extractor?.url !== lock.extractor?.url;
 }
 export function releaseTag(upstream, revision) { parseVersion(upstream); if (!Number.isInteger(revision) || revision < 1) throw new Error('Theme revision must be a positive integer'); return `7zip-${upstream}-theme.${revision}`; }
 

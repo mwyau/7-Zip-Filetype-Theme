@@ -12,7 +12,7 @@
     "verify": "node scripts/verify.mjs",
     "report": "node scripts/report.mjs",
     "check-upstream": "node scripts/check-upstream.mjs",
-    "lint": "node --check scripts/core.mjs && node --check scripts/build.mjs && node --check scripts/fetch-7zip.mjs && node --check scripts/verify.mjs && node --check scripts/integration.mjs && node --check scripts/report.mjs && node --check scripts/reports.mjs && node --check scripts/clamav-scan.mjs && node --check scripts/verify-clamav-artifact.mjs && node --check scripts/upstream.mjs && node --check scripts/check-upstream.mjs && node --check tests/clamav.test.mjs",
+    "lint": "node --check scripts/core.mjs && node --check scripts/build.mjs && node --check scripts/fetch-7zip.mjs && node --check scripts/verify.mjs && node --check scripts/integration.mjs && node --check scripts/report.mjs && node --check scripts/reports.mjs && node --check scripts/clamav-scan.mjs && node --check scripts/verify-clamav-artifact.mjs && node --check scripts/verify-release-environment.mjs && node --check scripts/upstream.mjs && node --check scripts/check-upstream.mjs && node --check tests/clamav.test.mjs",
     "clamav:scan": "node scripts/clamav-scan.mjs"
   },
   "dependencies": {

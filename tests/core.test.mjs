@@ -6,6 +6,7 @@ import path from 'node:path';
 import { sha256, verifyAsset, validateManifest, parseRes, diffResourceMaps, readJson } from '../scripts/core.mjs';
 import { compareVersions, lockNeedsUpdate, parseVersion, publicationAction, releaseTag, selectReleaseAssets } from '../scripts/upstream.mjs';
 import { generateVisualReports, markWindowsIntegrationPassed } from '../scripts/reports.mjs';
+import { validateReleaseEnvironment } from '../scripts/verify-release-environment.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 test('strict numeric stable-version parsing and ordering', () => {
@@ -28,6 +29,10 @@ test('lock update decision handles no update, same-version digest change, and ne
   assert.equal(lockNeedsUpdate(lock, same), false);
   const changed = structuredClone(same); changed.assets.x86.sha256 = 'f'.repeat(64);
   assert.equal(lockNeedsUpdate(lock, changed), true);
+  const extractorChanged = structuredClone(same); extractorChanged.extractor.sha256 = 'e'.repeat(64);
+  assert.equal(lockNeedsUpdate(lock, extractorChanged), true);
+  const releaseReplaced = structuredClone(same); releaseReplaced.releaseId += 1;
+  assert.equal(lockNeedsUpdate(lock, releaseReplaced), true);
   assert.equal(lockNeedsUpdate(lock, { ...same, version: '26.05' }), true);
   assert.equal(lockNeedsUpdate(lock, { ...same, version: '26.03' }), false);
 });
@@ -68,6 +73,13 @@ test('release revision tags and publication are idempotent and reject mismatched
   assert.equal(publicationAction({ tagExists: true, releaseExists: true, requestedAssets: assets, publishedAssets: assets, commit: 'a', publishedCommit: 'a' }), 'noop');
   assert.throws(() => publicationAction({ tagExists: true, releaseExists: false, requestedAssets: assets, commit: 'a' }));
   assert.throws(() => publicationAction({ tagExists: true, releaseExists: true, requestedAssets: assets, publishedAssets: { ...assets, 'theme.7z': 'different' }, commit: 'a', publishedCommit: 'a' }));
+});
+test('release approval guard requires the repository owner and disables administrator bypass', () => {
+  const environment = { name: 'release', can_admins_bypass: false, protection_rules: [{ type: 'required_reviewers', reviewers: [{ type: 'User', reviewer: { login: 'mwyau' } }] }] };
+  assert.deepEqual(validateReleaseEnvironment(environment, 'mwyau'), { environment: 'release', reviewer: 'mwyau', administratorBypass: false });
+  assert.throws(() => validateReleaseEnvironment({ ...environment, can_admins_bypass: true }, 'mwyau'), /administrator bypass/);
+  assert.throws(() => validateReleaseEnvironment({ ...environment, protection_rules: [] }, 'mwyau'), /repository owner/);
+  assert.throws(() => validateReleaseEnvironment({ ...environment, name: 'other' }, 'mwyau'), /environment "release" is missing/);
 });
 test('visual report generator renders all source contact sheets without a desktop', async () => {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'theme-report-'));
