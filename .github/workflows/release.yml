@@ -3,6 +3,12 @@ name: Validated 7-Zip theme release
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - 'README.md'
+      - 'AGENTS.md'
+      - 'docs/**'
+      - 'assets/**/info/**'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 permissions:
