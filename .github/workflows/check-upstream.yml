@@ -1,4 +1,4 @@
-name: Check official 7-Zip release
+name: Maintenance - Check for new 7-Zip versions
 
 on:
   schedule:
@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   check:
+    name: Check official 7-Zip release
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -17,20 +18,25 @@ jobs:
       update: ${{ steps.upstream.outputs.update }}
       version: ${{ steps.upstream.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out master
+        uses: actions/checkout@v4
         with:
           ref: master
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - id: upstream
+      - name: Install dependencies
+        run: npm ci
+      - name: Compare release with pinned version
+        id: upstream
         run: npm run check-upstream
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
   compatibility-pr:
+    name: Open upstream compatibility PR
     needs: check
     if: needs.check.outputs.update == 'true'
     runs-on: ubuntu-latest
@@ -38,7 +44,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - name: Require the repository GitHub App credentials
+      - name: Verify GitHub App credentials
         env:
           APP_ID: ${{ vars.APP_ID }}
           APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
@@ -47,25 +53,31 @@ jobs:
             echo 'Missing APP_ID or APP_PRIVATE_KEY; configure the repository GitHub App before unattended compatibility PR creation.' >&2
             exit 1
           fi
-      - uses: actions/checkout@v4
+      - name: Check out master
+        uses: actions/checkout@v4
         with:
           ref: master
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: node scripts/check-upstream.mjs
+      - name: Install dependencies
+        run: npm ci
+      - name: Update pinned release metadata
+        run: node scripts/check-upstream.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      - uses: actions/create-github-app-token@v2
+      - name: Create scoped GitHub App token
+        uses: actions/create-github-app-token@v2
         id: app-token
         with:
           app-id: ${{ vars.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
-      - uses: peter-evans/create-pull-request@v7
+      - name: Create or update compatibility PR
+        uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ steps.app-token.outputs.token }}
           base: master

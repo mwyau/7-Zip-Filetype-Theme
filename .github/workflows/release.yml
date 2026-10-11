@@ -1,4 +1,4 @@
-name: Validated 7-Zip theme release
+name: Release - Validate and publish
 
 on:
   push:
@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   preflight:
-    name: Release eligibility
+    name: Check release eligibility
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
@@ -29,61 +29,71 @@ jobs:
     outputs:
       proceed: ${{ steps.check.outputs.proceed }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out release commit
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Check tag and published release state
+      - name: Check existing tag and release assets
         id: check
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/release-preflight.mjs
 
   validate:
-    name: Build and acceptance validation
+    name: Build and test release (Windows x86/x64)
     needs: preflight
     if: github.ref == 'refs/heads/master' && needs.preflight.outputs.proceed == 'true'
     runs-on: windows-latest
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out release commit
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-      - name: Confirm this commit is current master
+      - name: Verify commit is current master
         shell: pwsh
         run: |
           git fetch origin master
           if ((git rev-parse origin/master) -ne $env:GITHUB_SHA) { throw 'Validated commit is not current master.' }
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
-      - run: npm run verify
-      - name: Smoke-test patched 7-Zip File Manager on x86 and x64
+      - name: Install dependencies
+        run: npm ci
+      - name: Check JavaScript syntax
+        run: npm run lint
+      - name: Run unit tests
+        run: npm test
+      - name: Build eight theme packages
+        run: npm run build
+      - name: Verify packages and archive operations
+        run: npm run verify
+      - name: Check File Manager window (x86/x64)
         shell: pwsh
         run: ./scripts/gui-smoke.ps1
-      - run: npm run report
-      - name: Stage exact ClamAV and release inputs
+      - name: Generate visual reports
+        run: npm run report
+      - name: Stage binaries for malware scan
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path clamav-input/packages, clamav-input/dist | Out-Null
           Copy-Item -Path .build/packages/* -Destination clamav-input/packages -Recurse -Force
           Copy-Item -Path dist/* -Destination clamav-input/dist -Force
-      - name: Upload immutable build outputs for scanning and release
+      - name: Upload binaries for malware scan
         uses: actions/upload-artifact@v4
         with:
           name: scan-input-${{ github.sha }}
           path: clamav-input/**
           if-no-files-found: error
           retention-days: 90
-      - name: Upload visual reports
+      - name: Upload release reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -93,12 +103,12 @@ jobs:
           retention-days: 90
 
   clamav:
-    name: Mandatory ClamAV security gate
+    name: Scan release packages for malware
     needs: validate
     uses: ./.github/workflows/clamav-scan.yml
 
   approval_config:
-    name: Verify owner approval protection
+    name: Verify release approval policy
     needs: [validate, clamav]
     if: github.ref == 'refs/heads/master' && needs.validate.result == 'success' && needs.clamav.result == 'success'
     runs-on: ubuntu-26.04
@@ -106,13 +116,15 @@ jobs:
       actions: read
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out release commit
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Require owner approval with administrator bypass disabled
+      - name: Check required reviewer and bypass policy
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -128,34 +140,38 @@ jobs:
       actions: read
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out release commit
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Recheck approval protection before publication
+      - name: Recheck release approval policy
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node scripts/verify-release-environment.mjs
-      - uses: actions/download-artifact@v4
+      - name: Download validated packages
+        uses: actions/download-artifact@v4
         with:
           name: scan-input-${{ github.sha }}
           path: release-input
-      - uses: actions/download-artifact@v4
+      - name: Download malware scan report
+        uses: actions/download-artifact@v4
         with:
           name: clamav-report-${{ github.sha }}
           path: clamav-report
-      - name: Derive upstream version and theme revision
+      - name: Determine release tag
         id: release
         shell: pwsh
         run: |
           $lock = Get-Content -Raw config/7zip.lock.json | ConvertFrom-Json
           $metadata = Get-Content -Raw config/release.json | ConvertFrom-Json
           "RELEASE_TAG=7zip-$($lock.version)-theme.$($metadata.themeRevision)" >> $env:GITHUB_ENV
-      - name: Verify the scanned artifact and publish idempotently
+      - name: Verify checksums and publish release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
