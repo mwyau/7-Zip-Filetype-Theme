@@ -67,6 +67,8 @@ The checker must remain idempotent: no duplicate PRs or branches for the same re
 ## CI acceptance and malware scan
 
 - `.github/workflows/ci.yml` builds and tests PR changes using Windows x86/x64 7-Zip binaries. The requirements include Node tests, PE/resource integrity, package matrix completeness, runtime archive smoke tests and generated visual reports.
+- The PR workflow runs for **all** PRs against `master` without path filters; required CI checks must never be skipped for docs-only PRs.
+- `scripts/gui-smoke.ps1` runs on the hosted Windows runner after package verification, copies each official upstream installation to an isolated temporary folder, replaces the themed `7z.dll` or Ribbon `7zFM.exe`, starts `7zFM.exe` on x86/x64, verifies that it stays running for three seconds, then terminates it and removes the folder. This tests startup only: it is not automated Ribbon appearance/DPI validation.
 - `.github/workflows/clamav-scan.yml` is a reusable Ubuntu 26.04 ClamAV gate required for both PR checks and the merged-`master` release.
 - ClamAV 1.5.0 or later checks independently verified official `main`, `daily`, and `bytecode` signature databases. The daily database must be no older than 48 hours; the main/bytecode databases may be older because they update at different rates.
 - The `clamav-freshclam` daemon must not race the foreground updater. Standalone `clamscan` does not require `clamd`. The workflow disables the unused `NotifyClamd` configuration before running the update; do not remove this fix.
@@ -76,7 +78,7 @@ The checker must remain idempotent: no duplicate PRs or branches for the same re
 
 ## Release workflow and owner approval
 
-`.github/workflows/release.yml` runs after pushes to `master` and on manual dispatch. It rebuilds from the exact merged commit, runs tests, PE/resource validation, packaging and ClamAV. The publishing job consumes the exact hashed artifacts validated by ClamAV, and rechecks integrity before uploading.
+`.github/workflows/release.yml` runs after non-documentation pushes to `master` and on manual dispatch. An early `release-preflight.mjs` job inspects the immutable tag and published asset state: a new tag or incomplete release on the same commit proceeds to full validation, while an already-complete release or a tag pointing to a different commit exits successfully without rebuilding. It never retags an existing release. When eligible, validation rebuilds from the exact merged commit, tests the patched File Manager startup on Windows x86/x64, checks PE/resource integrity, packages, and scans with ClamAV. The publishing job consumes the exact hashed artifacts validated by ClamAV, and rechecks integrity before uploading.
 
 Release tag format: `7zip-<upstream>-theme.<revision>`. `config/release.json` controls the theme revision; increment it when publishing genuinely new theme/build content against the same upstream version.
 

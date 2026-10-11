@@ -3,16 +3,6 @@ name: Compatibility CI
 on:
   pull_request:
     branches: [master]
-    paths:
-      - 'assets/**'
-      - 'config/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/**'
-      - 'README.md'
-      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -36,6 +26,9 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run verify
+      - name: Smoke-test patched 7-Zip File Manager on x86 and x64
+        shell: pwsh
+        run: ./scripts/gui-smoke.ps1
       - run: npm run report
       - name: Stage exact ClamAV and release inputs
         shell: pwsh
