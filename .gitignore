@@ -1,0 +1,14 @@
+node_modules/
+.cache/
+.build/
+dist/
+reports/generated/
+*.log
+*.sha256
+.env
+.env.*
+!.env.example
+clamav-input/
+scan-input/
+release-input/
+clamav-report/

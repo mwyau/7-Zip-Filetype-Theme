@@ -1,0 +1,11 @@
+{
+  "resourceLanguage": 1033,
+  "filetypes": [
+    {"name":"Windows 10","slug":"windows10","artwork":"assets/filetypes/windows10/Windows_10_res","groups":[[0,"0_7z.ico"],[1,"1_zip.ico"],[2,"2_bz2.ico"],[3,"3_rar.ico"],[4,"4_arj.ico"],[5,"5_z.ico"],[6,"6_lha.ico"],[7,"7_cab.ico"],[8,"8_iso.ico"],[9,"9_001.ico"],[10,"10_rpm.ico"],[11,"11_deb.ico"],[12,"12_cpio.ico"],[13,"13_tar.ico"],[14,"14_gz.ico"],[15,"15_wim.ico"],[16,"16_lzh.ico"],[17,"17_dmg.ico"],[18,"18_hfs.ico"],[19,"19_xar.ico"],[20,"20_vhd.ico"],[21,"21_fat.ico"],[22,"22_ntfs.ico"],[23,"23_xz.ico"],[24,"24_sq.ico"],[25,"apfs.ico"],[26,"25_zst.ico"]]},
+    {"name":"Fluent","slug":"fluent","artwork":"assets/filetypes/fluent/fluent_res","groups":[[0,"7z.ico"],[1,"zip.ico"],[2,"bz2.ico"],[3,"rar.ico"],[4,"arj.ico"],[5,"z.ico"],[6,"lha.ico"],[7,"cab.ico"],[8,"iso.ico"],[9,"001.ico"],[10,"rpm.ico"],[11,"deb.ico"],[12,"cpio.ico"],[13,"tar.ico"],[14,"gz.ico"],[15,"wim.ico"],[16,"lzh.ico"],[17,"dmg.ico"],[18,"hfs.ico"],[19,"xar.ico"],[20,"vhd.ico"],[21,"fat.ico"],[22,"ntfs.ico"],[23,"xz.ico"],[24,"sq.ico"],[25,"apfs.ico"],[26,"zst.ico"]]},
+    {"name":"Fluent Blue","slug":"fluent-blue","artwork":"assets/filetypes/fluent-blue/theme_res","groups":[[0,"7z.ico"],[1,"zip.ico"],[2,"bz2.ico"],[3,"rar.ico"],[4,"arj.ico"],[5,"z.ico"],[6,"lha.ico"],[7,"cab.ico"],[8,"iso.ico"],[9,"001.ico"],[10,"rpm.ico"],[11,"deb.ico"],[12,"cpio.ico"],[13,"tar.ico"],[14,"gz.ico"],[15,"wim.ico"],[16,"lzh.ico"],[17,"dmg.ico"],[18,"hfs.ico"],[19,"xar.ico"],[20,"vhd.ico"],[21,"fat.ico"],[22,"ntfs.ico"],[23,"xz.ico"],[24,"sq.ico"],[25,"apfs.ico"],[26,"zst.ico"]]}
+  ],
+  "ribbon": {
+    "name":"Windows 11 Ribbon","slug":"windows11-ribbon","target":"7zFM.exe","artwork":"assets/toolbar/windows11-ribbon/resources","bitmaps":[100,101,102,103,104,105,106,150,151,152,153,154,155,156,190]
+  }
+}

@@ -1,0 +1,83 @@
+name: Check official 7-Zip release
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      update: ${{ steps.upstream.outputs.update }}
+      version: ${{ steps.upstream.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - id: upstream
+        run: npm run check-upstream
+
+  compatibility-pr:
+    needs: check
+    if: needs.check.outputs.update == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Require the repository GitHub App credentials
+        env:
+          APP_ID: ${{ vars.APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APP_ID" ] || [ -z "$APP_PRIVATE_KEY" ]; then
+            echo 'Missing APP_ID or APP_PRIVATE_KEY; configure the repository GitHub App before unattended compatibility PR creation.' >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/check-upstream.mjs
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          base: master
+          branch: update/7zip-${{ needs.check.outputs.version }}
+          add-paths: config/7zip.lock.json
+          commit-message: 'Update official 7-Zip lock to ${{ needs.check.outputs.version }}'
+          title: 'Update 7-Zip themes to ${{ needs.check.outputs.version }}'
+          body: |
+            Updates the pinned upstream release from the committed lock file to official 7-Zip ${{ needs.check.outputs.version }}.
+
+            - Upstream release: https://github.com/ip7z/7zip/releases/tag/${{ needs.check.outputs.version }}
+            - Matrix: Windows x86/x64; Windows 10, Fluent, Fluent Blue filetypes, and Windows 11 Ribbon
+            - Resource compatibility and archive tests: pending required CI
+            - ClamAV: required after the complete Windows build; signature versions and verdict will be attached as a CI artifact
+            - Visual contact sheets and resource-diff report: uploaded by compatibility CI
+            - Manual intervention: review all compatibility checks and visually inspect the GUI before merging
+
+            This PR is not auto-merged. A compatibility failure remains visible here with diagnostics and artifacts.
+          draft: false

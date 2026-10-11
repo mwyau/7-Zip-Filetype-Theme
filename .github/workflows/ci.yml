@@ -1,0 +1,65 @@
+name: Compatibility CI
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'assets/**'
+      - 'config/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/**'
+      - 'README.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build:
+    name: Windows x86 + x64 build and acceptance
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm run verify
+      - run: npm run report
+      - name: Stage exact ClamAV and release inputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path clamav-input/packages, clamav-input/dist | Out-Null
+          Copy-Item -Path .build/packages/* -Destination clamav-input/packages -Recurse -Force
+          Copy-Item -Path dist/* -Destination clamav-input/dist -Force
+      - name: Upload immutable build outputs for scanning and release
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-input-${{ github.sha }}
+          path: clamav-input/**
+          if-no-files-found: error
+          retention-days: 90
+      - name: Upload visual and compatibility reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-reports-${{ github.sha }}
+          path: reports/generated/
+          if-no-files-found: warn
+          retention-days: 30
+
+  clamav:
+    name: Mandatory ClamAV security gate
+    needs: build
+    uses: ./.github/workflows/clamav-scan.yml

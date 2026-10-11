@@ -1,0 +1,57 @@
+name: ClamAV security gate
+
+on:
+  workflow_call:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  scan:
+    name: ClamAV scan
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare failure report
+        run: |
+          mkdir -p clamav-report
+          node -e "require('fs').writeFileSync('clamav-report/report.json', JSON.stringify({generatedAt:new Date().toISOString(),engineVersion:null,signatureUpdate:null,databases:{},fileCount:0,scanExitCode:null,verdict:'FAILED',error:'ClamAV setup or scanning did not complete',files:[]},null,2)+'\\n')"
+          printf '%s\n' '# ClamAV scan report' '' '- Verdict: FAILED' '- Error: ClamAV setup or scanning did not complete.' > clamav-report/report.md
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install official ClamAV and archive packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends clamav clamav-freshclam 7zip
+          if command -v 7zz >/dev/null 2>&1; then echo "SEVENZIP_BIN=7zz" >> "$GITHUB_ENV"; elif command -v 7z >/dev/null 2>&1; then echo "SEVENZIP_BIN=7z" >> "$GITHUB_ENV"; else echo 'Ubuntu 7zip executable is missing' >&2; exit 1; fi
+      - name: Stop the background updater before the foreground update
+        run: |
+          if systemctl is-active --quiet clamav-freshclam.service; then
+            sudo systemctl stop clamav-freshclam.service
+          fi
+          if systemctl is-active --quiet clamav-freshclam.service; then
+            echo 'clamav-freshclam.service is still active; refusing to race the updater' >&2
+            exit 1
+          fi
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: scan-input-${{ github.sha }}
+          path: scan-input
+      - name: Update signatures and scan all generated binaries and archives
+        run: node scripts/clamav-scan.mjs --root scan-input --report clamav-report/report.json
+      - name: Upload ClamAV audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clamav-report-${{ github.sha }}
+          path: |
+            clamav-report/report.json
+            clamav-report/report.md
+          if-no-files-found: error
+          retention-days: 90
