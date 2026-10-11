@@ -38,6 +38,10 @@ jobs:
             echo 'clamav-freshclam.service is still active; refusing to race the updater' >&2
             exit 1
           fi
+      - name: Disable unnecessary clamd notification
+        shell: bash
+        run: |
+          sudo sed -i '/^[[:space:]]*NotifyClamd[[:space:]]/s/^/#/' /etc/clamav/freshclam.conf
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
