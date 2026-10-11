@@ -1,5 +1,7 @@
-# Fail if a patched 7zFM.exe cannot start and remain running on the Windows CI host.
+# Fail if a patched 7zFM.exe cannot start and create a top-level UI Automation window.
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName UIAutomationClient -ErrorAction Stop
+Add-Type -AssemblyName UIAutomationTypes -ErrorAction Stop
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $manifest = Get-Content -Raw (Join-Path $root 'config/themes.json') | ConvertFrom-Json
 $themes = @($manifest.filetypes | ForEach-Object { $_.slug }) + @($manifest.ribbon.slug)
@@ -30,7 +32,36 @@ try {
         if ($process.HasExited) {
           throw "$arch/$($theme): 7zFM.exe exited during startup (exit code $($process.ExitCode))."
         }
-        Write-Host "$arch/$($theme): patched File Manager started and remained running."
+        # MainWindowHandle identifies a top-level window; verify that Windows UI Automation
+        # recognizes it as a Window owned by this patched File Manager process.
+        $foundWindow = $false
+        for ($attempt = 0; $attempt -lt 20; $attempt++) {
+          $process.Refresh()
+          if ($process.HasExited) {
+            throw "$arch/$($theme): 7zFM.exe exited before creating a File Manager window."
+          }
+          $handle = $process.MainWindowHandle
+          if ($handle -ne [IntPtr]::Zero) {
+            try {
+              $element = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+              if ($null -ne $element -and
+                  $element.Current.ProcessId -eq $process.Id -and
+                  $element.Current.ControlType -eq [System.Windows.Automation.ControlType]::Window) {
+                $foundWindow = $true
+                break
+              }
+            } catch [System.Windows.Automation.ElementNotAvailableException] {
+              # Window was recreated while probing; retry until the deadline.
+            } catch [System.Runtime.InteropServices.COMException] {
+              # Transient UI Automation availability error during startup.
+            }
+          }
+          Start-Sleep -Milliseconds 250
+        }
+        if (-not $foundWindow) {
+          throw "$arch/$($theme): 7zFM.exe stayed running but did not create a top-level File Manager window."
+        }
+        Write-Host "$arch/$($theme): patched File Manager started and exposed a UI Automation window."
       } finally {
         if ($null -ne $process) {
           try {
