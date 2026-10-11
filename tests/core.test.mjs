@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { sha256, verifyAsset, validateManifest, parseRes, diffResourceMaps, readJson } from '../scripts/core.mjs';
 import { compareVersions, lockNeedsUpdate, parseVersion, publicationAction, releaseTag, selectReleaseAssets } from '../scripts/upstream.mjs';
-import { generateVisualReports } from '../scripts/reports.mjs';
+import { generateVisualReports, markWindowsIntegrationPassed } from '../scripts/reports.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 test('strict numeric stable-version parsing and ordering', () => {
@@ -76,4 +76,17 @@ test('visual report generator renders all source contact sheets without a deskto
     assert.equal(files.length, 4);
     for (const file of files) { const stat = fs.statSync(file); assert.ok(stat.size > 1000); assert.equal(fs.readFileSync(file).subarray(0, 8).toString('hex'), '89504e470d0a1a0a'); }
   } finally { fs.rmSync(out, { recursive: true, force: true }); }
+});
+test('Windows integration results distinguish runtime-tested filetypes from Ribbon GUI smoke', () => {
+  const manifest = readJson(path.join(root, 'config/themes.json'));
+  const diff = { results: [
+    { theme: manifest.filetypes[0].name, functionalTests: { status: 'pending-windows-integration' } },
+    { theme: manifest.filetypes[1].name, functionalTests: { status: 'pending-windows-integration' } },
+    { theme: manifest.ribbon.name, functionalTests: { status: 'gui-smoke-not-automated' } },
+  ] };
+  const updated = markWindowsIntegrationPassed(diff, manifest);
+  assert.equal(updated.results[0].functionalTests.status, 'passed-x86-x64-archive-runtime-smoke');
+  assert.equal(updated.results[1].functionalTests.status, 'passed-x86-x64-archive-runtime-smoke');
+  assert.equal(updated.results[2].functionalTests.status, 'passed-x86-x64-package-integrity; GUI-smoke-pending');
+  assert.equal(diff.results[0].functionalTests.status, 'pending-windows-integration');
 });

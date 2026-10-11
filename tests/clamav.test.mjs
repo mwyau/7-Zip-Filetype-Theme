@@ -106,6 +106,9 @@ test('ClamAV gate rejects incomplete/limited scan warnings even with exit zero',
   const result = runFixture({ scannerStatus: 0, scannerOutput: 'WARNING: archive scan exceeded size limit\nScanned files: 24\nInfected files: 0' });
   try { assert.match(result.error.message, /warning or incomplete scan/); assert.equal(result.report.verdict, 'FAILED'); }
   finally { result.f.cleanup(); }
+  const short = runFixture({ scannerStatus: 0, scannerOutput: 'Scanned files: 23\nInfected files: 0' });
+  try { assert.match(short.error.message, /scan appears incomplete/); assert.equal(short.report.verdict, 'FAILED'); }
+  finally { short.f.cleanup(); }
 });
 test('post-download verification rejects changed or missing scanned artifacts', () => {
   const { f, report } = runFixture();

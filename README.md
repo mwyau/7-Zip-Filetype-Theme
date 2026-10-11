@@ -56,6 +56,8 @@ Compatibility PRs remain review- and merge-gated. Failed compatibility checks st
 
 Pull requests run unit tests, the full Windows x86/x64 build matrix, PE/resource validation, archive integration tests, and visual report generation. PR workflows have read-only repository permissions and cannot publish releases.
 
+Protect `master` in repository rules so pull requests require approval and the successful Compatibility CI build and ClamAV checks. Do not allow bypass of these checks for compatibility changes; workflow files cannot enforce GitHub's merge-protection settings by themselves.
+
 After a merge to `master`, the release workflow rebuilds and validates the entire matrix from that commit, creates SHA-256 checksums and provenance, and uploads the exact successful build as an artifact. Only the final publishing job uses the protected GitHub Environment named `release`; configure required reviewers there so approval is requested immediately before publication. The publishing job checks that `master` has not advanced, validates existing tag/release state, and refuses to overwrite mismatched assets. Release tags use `7zip-<upstream>-theme.<revision>`; increment `themeRevision` in `config/release.json` when theme/build content needs a new package for the same upstream version.
 
 A publication retry will reuse the exact validated artifact. Matching already-published assets are treated as a no-op; a partial release can receive only missing, hash-matching assets. Conflicting tags or assets fail closed and require investigation. No release is published as part of this development work.

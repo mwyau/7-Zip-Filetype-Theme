@@ -7,6 +7,24 @@ import { parseRes, readJson, validateManifest } from './core.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cellW = 172, cellH = 150, columns = 7;
+export function markWindowsIntegrationPassed(diff, manifest) {
+  const filetypeNames = new Set(manifest.filetypes.map((theme) => theme.name));
+  const ribbonName = manifest.ribbon.name;
+  return {
+    ...diff,
+    results: diff.results.map((item) => ({
+      ...item,
+      functionalTests: {
+        ...item.functionalTests,
+        status: filetypeNames.has(item.theme)
+          ? 'passed-x86-x64-archive-runtime-smoke'
+          : item.theme === ribbonName
+            ? 'passed-x86-x64-package-integrity; GUI-smoke-pending'
+            : item.functionalTests?.status ?? 'not-run',
+      },
+    })),
+  };
+}
 function labelSvg(lines, bad = false) {
   const escaped = lines.map((line) => line.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'));
   return Buffer.from(`<svg width="${cellW}" height="48" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="${bad ? '#ffe3e3' : '#f1f3f5'}"/><text x="86" y="16" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" fill="${bad ? '#a00000' : '#202124'}">${escaped[0] ?? ''}</text><text x="86" y="34" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" fill="#444">${escaped[1] ?? ''}</text></svg>`);

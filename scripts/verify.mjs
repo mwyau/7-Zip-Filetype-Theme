@@ -3,10 +3,11 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readJson, validatePe, sha256 } from './core.mjs';
+import { generateVisualReports, markWindowsIntegrationPassed } from './reports.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const lock = readJson(path.join(root, 'config/7zip.lock.json'));
 const manifest = readJson(path.join(root, 'config/themes.json'));
-const report = readJson(path.join(root, 'reports/generated/resource-diff.json'));
+let report = readJson(path.join(root, 'reports/generated/resource-diff.json'));
 if (report.upstreamVersion !== lock.version || report.results.length !== 8 || report.artifacts.length !== 8) throw new Error('Release report is incomplete or does not match the locked release');
 if (report.results.some((result) => result.changes.some((change) => change.classification !== 'expected'))) throw new Error('Resource report contains unexpected changes');
 for (const result of report.results) {
@@ -30,5 +31,8 @@ fs.writeFileSync(path.join(root, 'dist/SHA256SUMS.txt'), sums);
 if (process.platform === 'win32') {
   const test = spawnSync(process.execPath, [path.join(root, 'scripts/integration.mjs')], { stdio: 'inherit', cwd: root, windowsHide: true });
   if (test.status !== 0) process.exit(test.status ?? 1);
+  report = markWindowsIntegrationPassed(report, manifest);
+  fs.writeFileSync(path.join(root, 'reports/generated/resource-diff.json'), `${JSON.stringify(report, null, 2)}\n`);
+  await generateVisualReports({ rootDir: root, outputDir: path.join(root, 'reports/generated') });
 } else console.log('Windows integration tests not run on this host; GitHub Windows CI is required for release eligibility.');
 console.log(`Verified ${report.artifacts.length} theme packages across x86/x64.`);
