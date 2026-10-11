@@ -75,7 +75,7 @@ A publication retry will reuse the exact validated artifact. Matching already-pu
 
 ## Mandatory ClamAV gate
 
-Both compatibility PRs and merged-master release candidates pass a required Ubuntu job using the Ubuntu `clamav` and `clamav-freshclam` packages. The workflow stops the `clamav-freshclam` service before invoking the updater itself, then downloads/validates current official signatures and rejects a missing or older-than-48-hours daily database. Main and bytecode database versions, signature counts, and build times are recorded as well.
+Both compatibility PRs and merged-master release candidates pass a required Ubuntu 26.04 job using Ubuntu's `clamav` and `clamav-freshclam` packages. ClamAV 1.5.0 or later is required for detached CVD signature verification. The workflow stops the `clamav-freshclam` service before invoking the updater itself, then downloads/validates current official signatures and rejects a missing or older-than-48-hours daily database. Main and bytecode database versions, signature counts, and build times are recorded as well.
 
 The scanner verifies the complete expected x86/x64/theme matrix, scans every generated `.dll`/`.exe` directly, lists and extracts each `.7z` package, confirms each archived executable is byte-identical to its raw build output, scans each extracted executable, and scans every archive with ClamAV archive scanning enabled. ClamAV malware detections, scanner errors, missing files, stale signatures, incomplete scan summaries, resource-limit warnings, and archive warnings all fail the job. No external scanning service or token is used.
 

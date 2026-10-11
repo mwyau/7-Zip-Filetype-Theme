@@ -26,12 +26,12 @@ function fixture() {
   }
   return { root, input: path.join(root, 'input'), db, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
 }
-function mockRunner({ updateStatus = 0, scannerStatus = 0, scannerOutput = null, serviceActive = false, dbTime = fixedNow } = {}) {
+function mockRunner({ updateStatus = 0, scannerStatus = 0, scannerOutput = null, serviceActive = false, dbTime = fixedNow, engineVersion = 'ClamAV 1.5.4/123/2026' } = {}) {
   return (command, args) => {
     if (command === 'systemctl' && args[0] === 'is-active') return { status: serviceActive ? 0 : 3, stdout: '', stderr: '' };
     if (command === 'sudo' && args[0] === 'systemctl') { serviceActive = false; return { status: 0, stdout: '', stderr: '' }; }
     if (command === 'sudo' && args[0] === 'freshclam') return { status: updateStatus, stdout: 'freshclam updated/current databases', stderr: '' };
-    if (command === 'clamscan' && args[0] === '--version') return { status: 0, stdout: 'ClamAV 1.4.3/123/2026\n', stderr: '' };
+    if (command === 'clamscan' && args[0] === '--version') return { status: 0, stdout: `${engineVersion}\n`, stderr: '' };
     if (command === 'sigtool') return { status: 0, stdout: `File: ${path.basename(args.at(-1))}\nBuild time: ${new Date(dbTime).toUTCString()}\nVersion: 42\nSignatures: 987654\nVerification OK.\n`, stderr: '' };
     if (command === '7z' && args[0] === 'l') {
       const archive = args.at(-1), name = path.basename(archive), [arch, ...slugParts] = name.slice(0, -3).split('-').reverse();
@@ -92,6 +92,11 @@ test('ClamAV gate rejects failed freshclam updates and missing signature databas
 test('ClamAV gate rejects stale signature databases', () => {
   const result = runFixture({ dbTime: fixedNow - 72 * 60 * 60 * 1000 });
   try { assert.match(result.error.message, /signature database is stale/); assert.equal(result.report.verdict, 'FAILED'); }
+  finally { result.f.cleanup(); }
+});
+test('ClamAV gate rejects engines without detached-signature certificate support', () => {
+  const result = runFixture({ engineVersion: 'ClamAV 1.4.6/123/2026' });
+  try { assert.match(result.error.message, /1\.5\.0 or newer is required/); assert.equal(result.report.engineVersion, 'ClamAV 1.4.6/123/2026'); }
   finally { result.f.cleanup(); }
 });
 test('ClamAV malware verdict and scanner errors both fail', () => {

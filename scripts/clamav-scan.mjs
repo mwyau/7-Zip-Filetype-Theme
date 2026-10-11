@@ -86,6 +86,8 @@ export function scanArtifacts({ rootDir, reportFile, repository = repositoryRoot
     const engine = mustRun(runner, 'clamscan', ['--version'], 'ClamAV engine version');
     report.engineVersion = engine.stdout.trim().split(/[\r\n]/)[0];
     if (!/^ClamAV\s+\d/.test(report.engineVersion)) throw new Error(`Unexpected ClamAV engine version output: ${report.engineVersion}`);
+    const engineVersion = report.engineVersion.match(/^ClamAV\s+(\d+)\.(\d+)\.(\d+)/);
+    if (!engineVersion || Number(engineVersion[1]) < 1 || Number(engineVersion[1]) === 1 && Number(engineVersion[2]) < 5) throw new Error(`ClamAV 1.5.0 or newer is required for detached signature verification (found ${report.engineVersion})`);
     report.databases = signatureDatabases(dbDir, certsDir, runner);
     assertFresh(report.databases, now, maxAgeHours);
 
