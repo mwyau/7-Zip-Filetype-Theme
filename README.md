@@ -42,6 +42,6 @@ Install **one** filetype theme; the Windows 11 Ribbon package is optional and ca
 
 These packages contain **modified copies** of official 7-Zip DLL/EXE files. Their original Authenticode signatures may be invalidated. The build pipeline checks resource integrity, runs functional tests and scans outputs with ClamAV; a clean scan does not guarantee a file is malware-free. Release [checksums and provenance](https://github.com/mwyau/7-Zip-Filetype-Theme/releases/latest) are available for verification.
 
-Windows 10 icons: [masamunecyrus](https://www.deviantart.com/masamunecyrus). Fluent and Fluent Blue icons: [Th3Z](https://www.deviantart.com/th3z). Original theme project: [Mr4Mike4](https://github.com/Mr4Mike4/7-Zip-Filetype-Theme). The original third-party artwork attribution is retained; distribution rights for all artwork have not been independently verified.
+Windows 10 icons: [masamunecyrus](https://www.deviantart.com/masamunecyrus). Fluent and Fluent Blue icons: [Th3Z](https://www.deviantart.com/th3z). Original theme project: [Mr4Mike4](https://github.com/Mr4Mike4/7-Zip-Filetype-Theme). The original third-party artwork attribution is retained; distribution rights for all artwork have not been independently verified. See the [artwork rights review](docs/artwork-rights.md).
 
 For development, testing, automation, and release maintenance, see [AGENTS.md](AGENTS.md).

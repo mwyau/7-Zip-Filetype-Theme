@@ -20,9 +20,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    name: Release eligibility
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check tag and published release state
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release-preflight.mjs
+
   validate:
     name: Build and acceptance validation
-    if: github.ref == 'refs/heads/master'
+    needs: preflight
+    if: github.ref == 'refs/heads/master' && needs.preflight.outputs.proceed == 'true'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -44,6 +66,9 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run verify
+      - name: Smoke-test patched 7-Zip File Manager on x86 and x64
+        shell: pwsh
+        run: ./scripts/gui-smoke.ps1
       - run: npm run report
       - name: Stage exact ClamAV and release inputs
         shell: pwsh
