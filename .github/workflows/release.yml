@@ -83,9 +83,10 @@ jobs:
       - name: Stage binaries for malware scan
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path clamav-input/packages, clamav-input/dist | Out-Null
+          New-Item -ItemType Directory -Force -Path clamav-input/packages, clamav-input/dist, clamav-input/tools | Out-Null
           Copy-Item -Path .build/packages/* -Destination clamav-input/packages -Recurse -Force
           Copy-Item -Path dist/* -Destination clamav-input/dist -Force
+          Copy-Item -LiteralPath .cache/upstream/7zr.exe -Destination clamav-input/tools/7zr.exe
       - name: Upload binaries for malware scan
         uses: actions/upload-artifact@v4
         with:

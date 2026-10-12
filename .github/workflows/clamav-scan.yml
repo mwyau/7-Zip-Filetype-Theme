@@ -1,4 +1,4 @@
-name: Security - ClamAV scan (reusable)
+name: Security - Windows ClamAV scan (reusable)
 
 on:
   workflow_call:
@@ -10,47 +10,55 @@ permissions:
 jobs:
   scan:
     name: Scan binaries and archives
-    runs-on: ubuntu-26.04
+    runs-on: windows-latest
     permissions:
       actions: read
       contents: read
     steps:
+      - name: Initialize failure-safe scan report
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path clamav-report | Out-Null
+          $report = [ordered]@{
+            generatedAt = [DateTime]::UtcNow.ToString('o')
+            engineVersion = $null
+            signatureUpdate = $null
+            databases = [ordered]@{}
+            fileCount = 0
+            scanExitCode = $null
+            scanSummary = $null
+            verdict = 'FAILED'
+            error = 'ClamAV setup or scan did not complete'
+            files = @()
+          }
+          $report | ConvertTo-Json -Depth 8 | Set-Content -Path clamav-report/report.json -Encoding utf8
+          Set-Content -Path clamav-report/report.md -Encoding utf8 -Value @'
+          # ClamAV scan report
+
+          - Verdict: **FAILED**
+          - Error: ClamAV setup or scan did not complete.
+          '@
       - name: Check out security scripts
         uses: actions/checkout@v4
-      - name: Initialize failure-safe scan report
-        run: |
-          mkdir -p clamav-report
-          node -e "require('fs').writeFileSync('clamav-report/report.json', JSON.stringify({generatedAt:new Date().toISOString(),engineVersion:null,signatureUpdate:null,databases:{},fileCount:0,scanExitCode:null,verdict:'FAILED',error:'ClamAV setup or scanning did not complete',files:[]},null,2)+'\\n')"
-          printf '%s\n' '# ClamAV scan report' '' '- Verdict: FAILED' '- Error: ClamAV setup or scanning did not complete.' > clamav-report/report.md
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install ClamAV and 7-Zip
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends clamav clamav-freshclam 7zip
-          if command -v 7zz >/dev/null 2>&1; then echo "SEVENZIP_BIN=7zz" >> "$GITHUB_ENV"; elif command -v 7z >/dev/null 2>&1; then echo "SEVENZIP_BIN=7z" >> "$GITHUB_ENV"; else echo 'Ubuntu 7zip executable is missing' >&2; exit 1; fi
-      - name: Stop automatic signature updater
-        run: |
-          if systemctl is-active --quiet clamav-freshclam.service; then
-            sudo systemctl stop clamav-freshclam.service
-          fi
-          if systemctl is-active --quiet clamav-freshclam.service; then
-            echo 'clamav-freshclam.service is still active; refusing to race the updater' >&2
-            exit 1
-          fi
-      - name: Disable unused clamd notification
-        shell: bash
-        run: |
-          sudo sed -i '/^[[:space:]]*NotifyClamd[[:space:]]/s/^/#/' /etc/clamav/freshclam.conf
-      - name: Download built packages
+      - name: Download exact build artifacts
         uses: actions/download-artifact@v4
         with:
           name: scan-input-${{ github.sha }}
           path: scan-input
+      - name: Set up official portable ClamAV
+        shell: pwsh
+        run: |
+          $scannerDirectory = & ./scripts/setup-clamav-windows.ps1 | Select-Object -Last 1
+          "CLAMAV_DIRECTORY=$scannerDirectory" >> $env:GITHUB_ENV
       - name: Update signatures and scan packages
-        run: node scripts/clamav-scan.mjs --root scan-input --report clamav-report/report.json
+        shell: pwsh
+        run: |
+          $databaseDirectory = Join-Path $env:RUNNER_TEMP 'clamav/database'
+          node scripts/clamav-scan.mjs --root scan-input --report clamav-report/report.json --clamav-dir $env:CLAMAV_DIRECTORY --database-dir $databaseDirectory --sevenzip scan-input/tools/7zr.exe
       - name: Upload scan audit report
         if: always()
         uses: actions/upload-artifact@v4
