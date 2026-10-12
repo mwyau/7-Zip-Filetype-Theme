@@ -1,6 +1,5 @@
 param(
-  [Parameter(Mandatory = $true)][string]$Dll,
-  [string[]]$GroupIds = @('0', '1', '13', '26')
+  [Parameter(Mandatory = $true)][string]$Dll
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,7 +27,7 @@ public static class NativeIconResourceSmoke
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DestroyIcon(IntPtr icon);
 
-    public static void Validate(string dll, string[] groupIds)
+    public static void Validate(string dll)
     {
         IntPtr module = LoadLibraryExW(dll, IntPtr.Zero, LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
         if (module == IntPtr.Zero)
@@ -38,33 +37,45 @@ public static class NativeIconResourceSmoke
         }
         try
         {
-            foreach (string groupId in groupIds)
+            int[] sizes = new int[] { 16, 32, 48, 256 };
+            for (int groupId = 0; groupId <= 26; groupId++)
             {
-                bool named = groupId == "0";
-                IntPtr resourceName = named ? Marshal.StringToHGlobalUni(groupId) : new IntPtr(Int32.Parse(groupId));
+                bool named = groupId == 0;
+                IntPtr resourceName = named ? Marshal.StringToHGlobalUni("0") : new IntPtr(groupId);
                 try
                 {
-                    IntPtr icon = LoadImageW(module, resourceName, IMAGE_ICON, 32, 32, 0);
-                    if (icon == IntPtr.Zero)
+                    foreach (int size in sizes)
                     {
-                        int error = Marshal.GetLastWin32Error();
-                        throw new Win32Exception(error, "LoadImageW RT_GROUP_ICON/" + (named ? "name:" : "ordinal:") + groupId + " failed with Win32 error " + error + ": " + new Win32Exception(error).Message);
-                    }
-                    if (!DestroyIcon(icon))
-                    {
-                        int error = Marshal.GetLastWin32Error();
-                        throw new Win32Exception(error, "DestroyIcon failed with Win32 error " + error + ": " + new Win32Exception(error).Message);
+                        IntPtr icon = LoadImageW(module, resourceName, IMAGE_ICON, size, size, 0);
+                        string label = "RT_GROUP_ICON/" + (named ? "name:" : "ordinal:") + groupId + " at " + size + "x" + size;
+                        if (icon == IntPtr.Zero)
+                        {
+                            int error = Marshal.GetLastWin32Error();
+                            throw new Win32Exception(error, "LoadImageW " + label + " failed with Win32 error " + error + ": " + new Win32Exception(error).Message);
+                        }
+                        if (!DestroyIcon(icon))
+                        {
+                            int error = Marshal.GetLastWin32Error();
+                            throw new Win32Exception(error, "DestroyIcon for " + label + " failed with Win32 error " + error + ": " + new Win32Exception(error).Message);
+                        }
                     }
                 }
                 finally { if (named) Marshal.FreeHGlobal(resourceName); }
             }
         }
-        finally { FreeLibrary(module); }
+        finally
+        {
+            if (!FreeLibrary(module))
+            {
+                int error = Marshal.GetLastWin32Error();
+                throw new Win32Exception(error, "FreeLibrary failed with Win32 error " + error + ": " + new Win32Exception(error).Message);
+            }
+        }
     }
 }
 '@
 
 Add-Type -TypeDefinition $nativeSource -Language CSharp -ErrorAction Stop
 $dllPath = (Resolve-Path -LiteralPath $Dll).Path
-[NativeIconResourceSmoke]::Validate($dllPath, $GroupIds)
-Write-Output "LoadImageW loaded RT_GROUP_ICON groups $($GroupIds -join ', ') from '$dllPath' as data-only resources."
+[NativeIconResourceSmoke]::Validate($dllPath)
+Write-Output "LoadImageW loaded all RT_GROUP_ICON groups 0-26 at 16, 32, 48, and 256 pixels from '$dllPath' as data-only resources."

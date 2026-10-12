@@ -3,12 +3,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import sharp from 'sharp';
 import { sha256, verifyAsset, validateManifest, parseRes, inspectDib, parseIco, parseGroupIcon, buildGroupIcon, allocateIconImages, validateIconResourceGraph, validateResourceOperations, parseVersionInfo, findMenuCommand, diffResourceMaps, readJson } from '../scripts/core.mjs';
 import { compareVersions, lockNeedsUpdate, parseVersion, publicationAction, releaseTag, selectReleaseAssets } from '../scripts/upstream.mjs';
-import { generateVisualReports, markWindowsIntegrationPassed, markWindowsGuiSmokePassed } from '../scripts/reports.mjs';
+import { decodeDib, generateVisualReports, markWindowsIntegrationPassed } from '../scripts/reports.mjs';
 import { validateReleaseEnvironment } from '../scripts/verify-release-environment.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
+function createDib({ width, height, bitsPerPixel, pixels, palette = [] }) {
+  const header = Buffer.alloc(40);
+  header.writeUInt32LE(40, 0); header.writeInt32LE(width, 4); header.writeInt32LE(height, 8);
+  header.writeUInt16LE(1, 12); header.writeUInt16LE(bitsPerPixel, 14); header.writeUInt32LE(pixels.length, 20);
+  header.writeUInt32LE(palette.length, 32);
+  return Buffer.concat([header, ...palette.map((entry) => Buffer.from(entry)), pixels]);
+}
 test('strict numeric stable-version parsing and ordering', () => {
   assert.deepEqual(parseVersion('26.04'), [26, 4]);
   assert.equal(compareVersions('26.10', '26.04'), 6);
@@ -73,6 +81,51 @@ test('DIB validation rejects a declared image size beyond the supplied payload',
   dib.writeUInt32LE(0, 20);
   assert.equal(inspectDib(dib).pixelBytes, 4);
 });
+test('DIB decoding preserves BGRA channels and handles bottom-up and top-down rows', () => {
+  const bottomUp = createDib({ width: 1, height: 2, bitsPerPixel: 32, pixels: Buffer.from([
+    0x11, 0x22, 0x33, 0x44,
+    0xaa, 0xbb, 0xcc, 0xdd,
+  ]) });
+  assert.deepEqual(decodeDib(bottomUp).data, Buffer.from([
+    0xcc, 0xbb, 0xaa, 0xdd,
+    0x33, 0x22, 0x11, 0x44,
+  ]));
+
+  const topDown = createDib({ width: 1, height: -2, bitsPerPixel: 32, pixels: Buffer.from([
+    1, 2, 3, 4,
+    5, 6, 7, 8,
+  ]) });
+  assert.deepEqual(decodeDib(topDown).data, Buffer.from([3, 2, 1, 4, 7, 6, 5, 8]));
+});
+test('1-bit DIB decoding respects palette order, MSB-first pixels, row padding, and orientation', () => {
+  const dib = createDib({
+    width: 3, height: 2, bitsPerPixel: 1,
+    palette: [[10, 20, 30, 0], [40, 50, 60, 0]],
+    // Positive height stores the bottom row first. Three bytes after each bit byte are padding.
+    pixels: Buffer.from([0x40, 0xff, 0xff, 0xff, 0xa0, 0, 0, 0]),
+  });
+  const color0 = [30, 20, 10, 255], color1 = [60, 50, 40, 255];
+  assert.deepEqual(decodeDib(dib).data, Buffer.from([...color1, ...color0, ...color1, ...color0, ...color1, ...color0]));
+});
+test('all Ribbon DIBs decode into complete pixel buffers without changing their source payloads', async () => {
+  const manifest = readJson(path.join(root, 'config/themes.json'));
+  assert.equal(manifest.ribbon.bitmaps.length, 15);
+  for (const id of manifest.ribbon.bitmaps) {
+    const source = fs.readFileSync(path.join(root, manifest.ribbon.artwork, `Bitmap${id}.res`));
+    const entry = parseRes(source, id), original = Buffer.from(entry.bin), decoded = decodeDib(entry.bin);
+    const expectedWidth = entry.bin.readInt32LE(4), expectedHeight = Math.abs(entry.bin.readInt32LE(8));
+    assert.equal(decoded.width, expectedWidth, `Bitmap ${id} width`);
+    assert.equal(decoded.height, expectedHeight, `Bitmap ${id} height`);
+    assert.equal(decoded.data.length, decoded.width * decoded.height * 4, `Bitmap ${id} pixel count`);
+    assert.ok(new Set(Array.from({ length: decoded.width * decoded.height }, (_, index) => decoded.data.subarray(index * 4, index * 4 + 4).toString('hex'))).size > 1, `Bitmap ${id} has decoded pixel colors`);
+    const png = await sharp(decoded.data, { raw: { width: decoded.width, height: decoded.height, channels: decoded.channels } }).png().toBuffer();
+    const pngMetadata = await sharp(png).metadata();
+    assert.equal(pngMetadata.width, expectedWidth, `Bitmap ${id} PNG width`);
+    assert.equal(pngMetadata.height, expectedHeight, `Bitmap ${id} PNG height`);
+    assert.deepEqual(await sharp(png).raw().toBuffer(), decoded.data, `Bitmap ${id} pixel data round-trips through PNG`);
+    assert.deepEqual(entry.bin, original, `Bitmap ${id} resource payload remains unchanged`);
+  }
+});
 test('ICO parser preserves all source image payloads and validates every mapped theme file', () => {
   const manifest = readJson(path.join(root, 'config/themes.json'));
   const counts = {};
@@ -86,6 +139,7 @@ test('ICO parser preserves all source image payloads and validates every mapped 
       payloads.push(...images.map((image) => image.bin.toString('hex')));
       assert.ok(images.every((image) => image.bin.length === image.bytesInRes));
       assert.ok(images.every((image) => image.info.width > 0 && image.info.height > 0));
+      for (const size of [16, 32, 48, 256]) assert.ok(images.some((image) => image.info.width === size && image.info.height === size), `${theme.slug} icon group ${groupId} contains ${size}x${size}`);
       assert.equal(groupId >= 0 && groupId < 27, true);
     }
     counts[theme.slug] = count;
@@ -136,7 +190,7 @@ test('native resource operation plans reject duplicate keys, unsupported types, 
   assert.throws(() => validateResourceOperations([{ type: 3, id: 1, language: 1033, action: 'update', bin: Buffer.alloc(0) }]), /requires nonempty binary data/);
   assert.throws(() => validateResourceOperations([{ type: 3, id: 1, language: 1033, action: 'delete', bin: Buffer.from([1]) }]), /must not include payload data/);
 });
-test('VERSIONINFO parser reads a verified VS_FIXEDFILEINFO without resedit', () => {
+test('VERSIONINFO parser reads a verified VS_FIXEDFILEINFO', () => {
   const version = Buffer.alloc(92);
   version.writeUInt16LE(version.length, 0); version.writeUInt16LE(52, 2); version.writeUInt16LE(0, 4);
   Buffer.from('VS_VERSION_INFO\0', 'utf16le').copy(version, 6);
@@ -188,6 +242,20 @@ test('visual report generator renders all source contact sheets without a deskto
     const files = await generateVisualReports({ rootDir: root, outputDir: out });
     assert.equal(files.length, 4);
     for (const file of files) { const stat = fs.statSync(file); assert.ok(stat.size > 1000); assert.equal(fs.readFileSync(file).subarray(0, 8).toString('hex'), '89504e470d0a1a0a'); }
+    const ribbon = files.find((file) => path.basename(file) === 'windows11-ribbon.png');
+    const { data, info } = await sharp(ribbon).raw().toBuffer({ resolveWithObject: true });
+    assert.equal(info.width, 7 * 172);
+    assert.equal(info.height, 32 + 3 * 150);
+    const manifest = readJson(path.join(root, 'config/themes.json'));
+    for (const [index, id] of manifest.ribbon.bitmaps.entries()) {
+      const originX = (index % 7) * 172 + 30, originY = 32 + Math.floor(index / 7) * 150 + 8;
+      let paintedPixels = 0;
+      for (let y = originY; y < originY + 96; y++) for (let x = originX; x < originX + 112; x++) {
+        const pixel = (y * info.width + x) * info.channels;
+        if (data[pixel] !== 231 || data[pixel + 1] !== 233 || data[pixel + 2] !== 236) paintedPixels++;
+      }
+      assert.ok(paintedPixels > 10, `Ribbon bitmap ${id} is visible in its contact-sheet tile`);
+    }
   } finally { fs.rmSync(out, { recursive: true, force: true }); }
 });
 test('Windows integration results distinguish runtime-tested filetypes from Ribbon GUI smoke', () => {
@@ -202,8 +270,4 @@ test('Windows integration results distinguish runtime-tested filetypes from Ribb
   assert.equal(updated.results[1].functionalTests.status, 'passed-x86-x64-archive-runtime-smoke');
   assert.equal(updated.results[2].functionalTests.status, 'passed-x86-x64-package-integrity; GUI-smoke-pending');
   assert.equal(diff.results[0].functionalTests.status, 'pending-windows-integration');
-  const gui = markWindowsGuiSmokePassed(updated, manifest);
-  assert.equal(gui.results[0].functionalTests.status, 'passed-x86-x64-archive-runtime-smoke; passed-x86-x64-options-tabs');
-  assert.equal(gui.results[2].functionalTests.status, 'passed-x86-x64-package-integrity; passed-x86-x64-options-tabs');
-  assert.deepEqual(markWindowsGuiSmokePassed(gui, manifest), gui);
 });

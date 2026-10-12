@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { decodeIco } from 'icojs';
-import { parseRes, readJson, validateManifest } from './core.mjs';
+import { inspectDib, parseRes, readJson, validateManifest } from './core.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cellW = 172, cellH = 150, columns = 7;
@@ -25,23 +25,35 @@ export function markWindowsIntegrationPassed(diff, manifest) {
     })),
   };
 }
-export function markWindowsGuiSmokePassed(diff, manifest) {
-  const filetypeNames = new Set(manifest.filetypes.map((theme) => theme.name));
-  const guiStatus = 'passed-x86-x64-options-tabs';
-  return {
-    ...diff,
-    results: diff.results.map((item) => ({
-      ...item,
-      functionalTests: {
-        ...item.functionalTests,
-        status: filetypeNames.has(item.theme)
-          ? [...new Set([...(item.functionalTests?.status ?? 'not-run').split(';').map((part) => part.trim()).filter((part) => part && part !== 'not-run'), guiStatus])].join('; ')
-          : item.theme === manifest.ribbon.name
-            ? 'passed-x86-x64-package-integrity; passed-x86-x64-options-tabs'
-            : item.functionalTests?.status ?? 'not-run',
-      },
-    })),
-  };
+export function decodeDib(input) {
+  const dib = Buffer.from(input), info = inspectDib(dib);
+  if (![1, 32].includes(info.bitsPerPixel)) throw new Error(`Unsupported DIB bit depth ${info.bitsPerPixel}; expected 1 or 32`);
+  const height = Math.abs(info.height), outputSize = info.width * height * 4;
+  if (!Number.isSafeInteger(outputSize) || outputSize > 0x7fffffff) throw new Error('DIB dimensions exceed the supported pixel buffer size');
+  const rgba = Buffer.alloc(outputSize);
+  for (let y = 0; y < height; y++) {
+    const sourceY = info.height < 0 ? y : height - 1 - y;
+    const sourceRow = info.pixelOffset + sourceY * info.rowStride;
+    for (let x = 0; x < info.width; x++) {
+      const target = (y * info.width + x) * 4;
+      if (info.bitsPerPixel === 32) {
+        const source = sourceRow + x * 4;
+        rgba[target] = dib[source + 2];
+        rgba[target + 1] = dib[source + 1];
+        rgba[target + 2] = dib[source];
+        rgba[target + 3] = dib[source + 3];
+      } else {
+        const paletteIndex = (dib[sourceRow + (x >> 3)] >> (7 - (x & 7))) & 1;
+        if (paletteIndex >= info.paletteEntries) throw new Error(`DIB pixel references missing palette entry ${paletteIndex}`);
+        const palette = info.headerSize + paletteIndex * 4;
+        rgba[target] = dib[palette + 2];
+        rgba[target + 1] = dib[palette + 1];
+        rgba[target + 2] = dib[palette];
+        rgba[target + 3] = 255;
+      }
+    }
+  }
+  return { width: info.width, height, channels: 4, data: rgba };
 }
 function labelSvg(lines, bad = false) {
   const escaped = lines.map((line) => line.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'));
@@ -59,12 +71,6 @@ async function contactSheet(items, output, title) {
   }
   fs.mkdirSync(path.dirname(output), { recursive: true });
   await base.composite(composites).png().toFile(output);
-}
-function dibToBmp(dib) {
-  const headerSize = dib.readUInt32LE(0), bpp = dib.readUInt16LE(14), compression = dib.readUInt32LE(16), colorsUsed = dib.readUInt32LE(32);
-  if (headerSize < 40 || headerSize > dib.length || ![1, 4, 8, 16, 24, 32].includes(bpp) || compression !== 0) throw new Error('unsupported DIB header/encoding');
-  const paletteEntries = colorsUsed || (bpp <= 8 ? 2 ** bpp : 0), offset = 14 + headerSize + paletteEntries * 4;
-  const bmp = Buffer.alloc(14 + dib.length); bmp.write('BM'); bmp.writeUInt32LE(bmp.length, 2); bmp.writeUInt32LE(offset, 10); dib.copy(bmp, 14); return bmp;
 }
 export async function generateVisualReports({ rootDir = root, outputDir = path.join(root, 'reports/generated') } = {}) {
   const manifest = readJson(path.join(rootDir, 'config/themes.json')); validateManifest(manifest, rootDir);
@@ -85,14 +91,10 @@ export async function generateVisualReports({ rootDir = root, outputDir = path.j
   }
   const ribbonItems = [];
   for (const id of manifest.ribbon.bitmaps) {
-    try {
-      const file = path.join(rootDir, manifest.ribbon.artwork, `Bitmap${id}.res`);
-      if (!fs.existsSync(file)) { ribbonItems.push({ lines: [`Bitmap ${id}`, 'Source absent'], bad: true }); continue; }
-      const entry = parseRes(fs.readFileSync(file), id), dib = entry.bin;
-      const width = dib.readInt32LE(4), height = Math.abs(dib.readInt32LE(8));
-      const image = await sharp(dibToBmp(dib)).png().toBuffer();
-      ribbonItems.push({ lines: [`RT_BITMAP · ID ${id}`, `${width}×${height}`], image });
-    } catch (error) { ribbonItems.push({ lines: [`Bitmap ${id}`, `Unreadable: ${error.message.slice(0, 26)}`], bad: true }); }
+    const file = path.join(rootDir, manifest.ribbon.artwork, `Bitmap${id}.res`);
+    const entry = parseRes(fs.readFileSync(file), id), decoded = decodeDib(entry.bin);
+    const image = await sharp(decoded.data, { raw: { width: decoded.width, height: decoded.height, channels: decoded.channels } }).png().toBuffer();
+    ribbonItems.push({ lines: [`RT_BITMAP · ID ${id}`, `${decoded.width}×${decoded.height}`], image });
   }
   const ribbon = path.join(outputDir, 'windows11-ribbon.png'); await contactSheet(ribbonItems, ribbon, 'Windows 11 Ribbon bitmaps'); generated.push(ribbon);
   const diffFile = path.join(outputDir, 'resource-diff.json');

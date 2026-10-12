@@ -3,7 +3,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { readJson, validateManifest, planIconPatch, verifyIconPatch, readRibbonBitmaps, verifyRibbonBitmaps, findMenuCommandInExecutable, validatePe, sha256, validateResourceOperations } from './core.mjs';
-import { generateVisualReports } from './reports.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const lock = readJson(path.join(root, 'config/7zip.lock.json'));
@@ -40,7 +39,7 @@ function applyNativeUpdate(executable, manifestPath, label) {
   if (result.error || result.status !== 0) throw new Error(`Native resource update failed for ${label}: ${result.error?.message || result.stderr || result.stdout}`);
 }
 let optionsMenuCommand = null;
-for (const [arch, asset] of Object.entries(lock.assets)) {
+for (const arch of Object.keys(lock.assets)) {
   const source = path.join(buildRoot, 'upstream', arch);
   const fm = fs.readFileSync(path.join(source, '7zFM.exe'));
   const menuCommand = findMenuCommandInExecutable(fm, manifest.resourceLanguage, 'Tools', 'Options...');
@@ -76,7 +75,6 @@ for (const [arch, asset] of Object.entries(lock.assets)) {
     report.artifacts.push(await packageFolder(stage, name, outRoot, source, arch, theme.slug));
   }
   const ribbon = manifest.ribbon;
-  if (process.platform !== 'win32') throw new Error('Windows Ribbon resource updates require the native Win32 resource APIs.');
   const bitmapRecords = readRibbonBitmaps((id) => path.join(root, ribbon.artwork, `Bitmap${id}.res`), ribbon.bitmaps, manifest.resourceLanguage);
   const nativeRoot = path.join(buildRoot, 'native-ribbon', arch);
   fs.mkdirSync(nativeRoot, { recursive: true });
@@ -107,12 +105,10 @@ fs.writeFileSync(path.join(buildRoot, 'gui-options-command.json'), `${JSON.strin
 fs.mkdirSync(path.join(root, 'reports/generated'), { recursive: true });
 fs.writeFileSync(path.join(root, 'reports/generated/resource-diff.json'), `${JSON.stringify(report, null, 2)}\n`);
 fs.writeFileSync(path.join(root, 'reports/generated/build-provenance.json'), `${JSON.stringify({ upstream: lock, tag, node: process.version, sourceCommit: process.env.GITHUB_SHA || null, artifacts: report.artifacts }, null, 2)}\n`);
-await generateVisualReports({ rootDir: root, outputDir: path.join(root, 'reports/generated') });
 console.log(`Built ${report.artifacts.length} archives for ${tag}`);
 
 async function packageFolder(folder, name, outputDirectory, upstream, arch, theme) {
   const executable = path.join(upstream, '7z.exe');
-  if (process.platform !== 'win32') throw new Error('Release .7z packaging requires the verified 7z.exe from the official Windows toolchain; run on a Windows runner.');
   const archive = path.join(outputDirectory, name); fs.mkdirSync(outputDirectory, { recursive: true });
   const proc = spawnSync(executable, ['a', '-t7z', '-mx=9', '-mtm=off', '-mtc=off', '-mta=off', archive, '.'], { cwd: folder, windowsHide: true, encoding: 'utf8' });
   if (proc.error || proc.status !== 0) throw new Error(`7z packaging failed for ${theme}/${arch}: ${proc.error?.message || proc.stderr}`);

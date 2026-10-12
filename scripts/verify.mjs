@@ -3,7 +3,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readJson, validatePe, sha256 } from './core.mjs';
-import { generateVisualReports, markWindowsIntegrationPassed } from './reports.mjs';
+import { markWindowsIntegrationPassed } from './reports.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const lock = readJson(path.join(root, 'config/7zip.lock.json'));
 const manifest = readJson(path.join(root, 'config/themes.json'));
@@ -22,7 +22,6 @@ for (const arch of Object.keys(lock.assets)) {
     validatePe(fs.readFileSync(binary), arch === 'x86' ? 0x014c : 0x8664, lock.version);
   }
 }
-for (const name of ['windows10-icons.png', 'fluent-icons.png', 'fluent-blue-icons.png', 'windows11-ribbon.png', 'resource-diff.json', 'summary.md', 'build-provenance.json']) if (!fs.existsSync(path.join(root, 'reports/generated', name))) throw new Error(`Missing generated report ${name}`);
 const provenanceSource = path.join(root, 'reports/generated/build-provenance.json');
 const provenanceTarget = path.join(root, 'dist/build-provenance.json');
 fs.copyFileSync(provenanceSource, provenanceTarget);
@@ -33,6 +32,5 @@ if (process.platform === 'win32') {
   if (test.status !== 0) process.exit(test.status ?? 1);
   report = markWindowsIntegrationPassed(report, manifest);
   fs.writeFileSync(path.join(root, 'reports/generated/resource-diff.json'), `${JSON.stringify(report, null, 2)}\n`);
-  await generateVisualReports({ rootDir: root, outputDir: path.join(root, 'reports/generated') });
 } else console.log('Windows integration tests not run on this host; GitHub Windows CI is required for release eligibility.');
 console.log(`Verified ${report.artifacts.length} theme packages across x86/x64.`);

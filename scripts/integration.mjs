@@ -115,7 +115,7 @@ function assertThemeIconsLoad(dll, label) {
   const result = spawnSync(powershell, [
     '-NoLogo', '-NoProfile', '-NonInteractive', '-File', iconLoader, '-Dll', dll,
   ], { cwd: root, encoding: 'utf8', windowsHide: true, maxBuffer: 1024 * 1024 });
-  if (result.error || result.status !== 0) throw new Error(`${label}: Windows LoadImageW could not load representative group icons: ${result.error?.message || result.stderr || result.stdout}`);
+  if (result.error || result.status !== 0) throw new Error(`${label}: Windows LoadImageW could not load all 27 icon groups at the requested sizes: ${result.error?.message || result.stderr || result.stdout}`);
   console.log(`${label}: ${result.stdout.trim()}`);
 }
 

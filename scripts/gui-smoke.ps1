@@ -1,8 +1,3 @@
-param(
-  [string]$LegacyRibbonRoot,
-  [switch]$BaselineOnly
-)
-
 # Fail if File Manager cannot start or Tools > Options cannot open with the patched Ribbon.
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient -ErrorAction Stop
@@ -109,7 +104,6 @@ public static class RibbonGuiNative
 Add-Type -TypeDefinition $nativeSource -Language CSharp -ErrorAction Stop
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $manifest = Get-Content -Raw (Join-Path $root 'config/themes.json') | ConvertFrom-Json
-$themes = @($manifest.filetypes | ForEach-Object { $_.slug }) + @($manifest.ribbon.slug)
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('7zip-gui-smoke-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp -Force | Out-Null
 
@@ -308,12 +302,9 @@ function Invoke-OptionsRegression([string]$arch, [string]$label, [string]$patche
     if ($null -ne $process) {
       try {
         $process.Refresh()
-        if (-not $process.HasExited) {
-          Stop-Process -Id $process.Id -Force -ErrorAction Stop
-          [void]$process.WaitForExit(5000)
-        }
-      } catch { Write-Warning "Unable to cleanly terminate Options test process $($process.Id): $_" }
-      $process.Dispose()
+        if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction Stop }
+        if (-not $process.WaitForExit(5000)) { throw "Options test process $($process.Id) remained alive after cleanup." }
+      } finally { $process.Dispose() }
     }
   }
 }
@@ -331,21 +322,7 @@ try {
       throw "Missing official 7zFM.exe for $arch"
     }
 
-    if ($BaselineOnly) {
-      if (-not $LegacyRibbonRoot) { throw '-BaselineOnly requires -LegacyRibbonRoot so the existing Ribbon patch can be compared with the official control.' }
-      $legacy = Join-Path (Resolve-Path -LiteralPath $LegacyRibbonRoot).Path (Join-Path $arch "$($manifest.ribbon.slug)/7zFM.exe")
-      if (-not (Test-Path -LiteralPath $legacy -PathType Leaf)) { throw "Missing existing Ribbon executable for ${arch}: $legacy" }
-      Invoke-OptionsRegression $arch 'official baseline' $null $null $optionsCommandId
-      Invoke-OptionsRegression $arch 'existing legacy Ribbon' $legacy $null $optionsCommandId
-      continue
-    }
-
     Invoke-OptionsRegression $arch 'official baseline' $null $null $optionsCommandId
-    if ($LegacyRibbonRoot) {
-      $legacy = Join-Path (Resolve-Path -LiteralPath $LegacyRibbonRoot).Path (Join-Path $arch "$($manifest.ribbon.slug)/7zFM.exe")
-      if (-not (Test-Path -LiteralPath $legacy -PathType Leaf)) { throw "Missing existing Ribbon executable for ${arch}: $legacy" }
-      Invoke-OptionsRegression $arch 'existing legacy Ribbon' $legacy $null $optionsCommandId
-    }
     $nativeRibbon = Join-Path $root ".build/packages/$arch/$($manifest.ribbon.slug)/7zFM.exe"
     if (-not (Test-Path -LiteralPath $nativeRibbon -PathType Leaf)) { throw "Missing native Ribbon executable for ${arch}: $nativeRibbon" }
     Invoke-OptionsRegression $arch 'native Ribbon' $nativeRibbon $null $optionsCommandId
@@ -355,88 +332,22 @@ try {
       Invoke-OptionsRegression $arch "official File Manager with $($filetype.name) DLL" $null $themedDll $optionsCommandId
       Invoke-OptionsRegression $arch "native Ribbon with $($filetype.name) DLL" $nativeRibbon $themedDll $optionsCommandId
     }
+  }
 
-    foreach ($theme in $themes) {
-      # Keep 7zFM.exe together with its original runtime dependencies.
-      $stage = Join-Path $temp "$arch-$theme"
-      Copy-Item -LiteralPath $upstream -Destination $stage -Recurse -Force
-      $target = if ($theme -eq $manifest.ribbon.slug) { '7zFM.exe' } else { '7z.dll' }
-      $patched = Join-Path $root ".build/packages/$arch/$theme/$target"
-      if (-not (Test-Path $patched)) { throw "Missing patched $target for $arch/$theme" }
-      Copy-Item -LiteralPath $patched -Destination (Join-Path $stage $target) -Force
-
-      $exe = Join-Path $stage '7zFM.exe'
-      $process = $null
-      try {
-        $process = Start-Process -FilePath $exe -WorkingDirectory $stage -PassThru -ErrorAction Stop
-        Start-Sleep -Seconds 3
-        $process.Refresh()
-        if ($process.HasExited) {
-          throw "$arch/$($theme): 7zFM.exe exited during startup (exit code $($process.ExitCode))."
-        }
-        # MainWindowHandle identifies a top-level window; verify that Windows UI Automation
-        # recognizes it as a Window owned by this patched File Manager process.
-        $foundWindow = $false
-        for ($attempt = 0; $attempt -lt 20; $attempt++) {
-          $process.Refresh()
-          if ($process.HasExited) {
-            throw "$arch/$($theme): 7zFM.exe exited before creating a File Manager window."
-          }
-          $handle = $process.MainWindowHandle
-          if ($handle -ne [IntPtr]::Zero) {
-            try {
-              $element = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
-              if ($null -ne $element -and
-                  $element.Current.ProcessId -eq $process.Id -and
-                  $element.Current.ControlType -eq [System.Windows.Automation.ControlType]::Window) {
-                $foundWindow = $true
-                break
-              }
-            } catch [System.Windows.Automation.ElementNotAvailableException] {
-              # Window was recreated while probing; retry until the deadline.
-            } catch [System.Runtime.InteropServices.COMException] {
-              # Transient UI Automation availability error during startup.
-            }
-          }
-          Start-Sleep -Milliseconds 250
-        }
-        if (-not $foundWindow) {
-          throw "$arch/$($theme): 7zFM.exe stayed running but did not create a top-level File Manager window."
-        }
-        Write-Host "$arch/$($theme): patched File Manager started and exposed a UI Automation window."
-      } finally {
-        if ($null -ne $process) {
-          try {
-            $process.Refresh()
-            if (-not $process.HasExited) {
-              Stop-Process -Id $process.Id -Force -ErrorAction Stop
-              [void]$process.WaitForExit(5000)
-            }
-          } catch {
-            Write-Warning "Unable to cleanly terminate smoke-test process $($process.Id): $_"
-          }
-          $process.Dispose()
-        }
-      }
+  $reportPath = Join-Path $root 'reports/generated/resource-diff.json'
+  if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) { throw 'Missing resource report; refusing to mark GUI smoke as passed.' }
+  $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
+  foreach ($result in $report.results) {
+    if ($result.theme -eq $manifest.ribbon.name) {
+      $result.functionalTests.status = 'passed-x86-x64-package-integrity; passed-x86-x64-options-tabs'
+    } else {
+      $statusParts = @(([string]$result.functionalTests.status -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique))
+      if ($statusParts -notcontains 'passed-x86-x64-options-tabs') { $statusParts += 'passed-x86-x64-options-tabs' }
+      $result.functionalTests.status = $statusParts -join '; '
     }
   }
-  if (-not $BaselineOnly) {
-    $reportPath = Join-Path $root 'reports/generated/resource-diff.json'
-    if (Test-Path -LiteralPath $reportPath -PathType Leaf) {
-      $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
-      foreach ($result in $report.results) {
-        if ($result.theme -eq $manifest.ribbon.name) {
-          $result.functionalTests.status = 'passed-x86-x64-package-integrity; passed-x86-x64-options-tabs'
-        } else {
-          $statusParts = @(([string]$result.functionalTests.status -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique))
-          if ($statusParts -notcontains 'passed-x86-x64-options-tabs') { $statusParts += 'passed-x86-x64-options-tabs' }
-          $result.functionalTests.status = $statusParts -join '; '
-        }
-      }
-      $json = ConvertTo-Json -InputObject $report -Depth 100
-      [IO.File]::WriteAllText($reportPath, $json + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
-    }
-  }
+  $json = ConvertTo-Json -InputObject $report -Depth 100
+  [IO.File]::WriteAllText($reportPath, $json + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
 } finally {
   Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
 }
