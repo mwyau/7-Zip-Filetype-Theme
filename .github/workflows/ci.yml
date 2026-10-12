@@ -33,7 +33,7 @@ jobs:
         run: npm run build
       - name: Verify packages and archive operations
         run: npm run verify
-      - name: Check File Manager window (x86/x64)
+      - name: Run mandatory Options tab UI smoke (x86/x64 matrix)
         shell: pwsh
         run: ./scripts/gui-smoke.ps1
       - name: Generate visual reports

@@ -14,11 +14,11 @@ This is the operational guide for contributors and coding agents working on `mwy
 ## Build architecture
 
 - Node.js 22 LTS and npm; `package-lock.json` pins dependencies.
-- `resedit-js` patches filetype icon groups in `7z.dll`; the Ribbon updater uses a small PowerShell/C# helper with `BeginUpdateResourceW`, `UpdateResourceW`, and `EndUpdateResourceW` on a staged `7zFM.exe`. The Node scripts replace Apache Ant. Neither an installed Windows 7-Zip nor an Ant/Resource Hacker executable is a build prerequisite.
+- `scripts/core.mjs` validates ICO payloads, builds Windows group-icon records, inspects PE resources and verifies file versions. `scripts/update-resources.ps1` uses one small PowerShell/C# helper around `BeginUpdateResourceW`, `UpdateResourceW`, and `EndUpdateResourceW` to update staged `7z.dll` icon resources and `7zFM.exe` Ribbon bitmaps in one transaction per PE. `pe-library` is a direct pinned dependency; do not reintroduce `resedit`. Neither an installed Windows 7-Zip nor an Ant/Resource Hacker executable is a build prerequisite.
 - `config/themes.json` is the sole resource mapping. Do not duplicate architecture-specific mappings in scripts.
 - Filetype icon-group IDs **0–26**, language **1033**, target `7z.dll`. Ribbon bitmap IDs **100–106, 150–156, 190**, language **1033**, target `7zFM.exe`.
 - Ribbon `.res` inputs are compiled resource containers. Parse and validate their boundaries, declared type/ID/language and payload; never feed the complete `.res` container into a raw bitmap replacement.
-- `npm run build` downloads exact installers and `7zr.exe` pinned in the lock file, verifies SHA-256 and size, extracts without executing installers, patches copies, verifies PE resources, produces deterministic `.7z` packages and build reports.
+- `npm run build` downloads exact installers and `7zr.exe` pinned in the lock file, verifies SHA-256 and size, extracts without executing installers, plans collision-free RT_ICON IDs, patches staged copies through the native writer, verifies icon graph closure and PE invariants, repeats each patch for byte-level reproducibility, and produces deterministic `.7z` packages and build reports.
 - Inputs are kept in ignored `.cache/` and `.build/`. Release packages use `dist/`; visual and resource reports are written under `reports/generated/`. Generated binaries, downloads, and reports must not be committed.
 - After any asset or mapping change, verify all themes on x86 and x64; check intended resource replacements and make sure unrelated imports, exports and executable contents are unchanged. Modifying PE resources may invalidate Authenticode signatures.
 
@@ -34,7 +34,7 @@ npm run verify
 npm run report
 ```
 
-`npm run build` requires external official GitHub release downloads; `npm run verify` checks the complete matrix, resource reports and runtime archive smoke tests (create, list, test, extract, compare hashes). `npm run report` makes headless icon and Ribbon contact sheets plus a structured resource diff. `OUTPUT_DIR` and `BUILD_DIR` may override output locations.
+`npm run build` requires external official GitHub release downloads; `npm run verify` checks the complete matrix, resource reports and runtime `.7z`/ZIP smoke tests (create, list, test, extract, compare paths/sizes/hashes, and prove the staged DLL was loaded). `npm run report` makes headless icon and Ribbon contact sheets plus a structured resource diff. `OUTPUT_DIR` and `BUILD_DIR` may override output locations.
 
 Use `npm run check-upstream` for an upstream stable-release check. Review the resulting lock-file changes before committing.
 
@@ -45,6 +45,7 @@ Use `npm run check-upstream` for an upstream stable-release check. Review the re
 - The human-facing Fluent preview is `assets/filetypes/fluent/info/preview.png`: it presents the original embedded 256×256, 48×48, 32×32 and 16×16 7z icon entries at their exact native dimensions, followed by all 27 filetype icons at native 48×48. Do not upscale or resample icon entries. This is a documentation preview, not a release input.
 - The Windows 11 Ribbon preview is `assets/toolbar/windows11-ribbon/info/preview.png`.
 - Generated CI reports contain contact sheets, a human-readable summary and structured resource-diff JSON, including original/patched hashes, expected-change classification, PE verification and functional test status.
+- Known follow-up: the generated Windows 11 Ribbon contact sheet currently marks all 15 bitmap tiles `INVALID`; Sharp 0.35.5 reports `Input buffer contains unsupported image format` for the `Bitmap100.res` DIB-to-BMP preview path. This is a preview decoder issue; keep its investigation separate from the native Ribbon executable and the 7z.dll icon migration.
 - Manually inspect the patched `7zFM.exe` Ribbon appearance on Windows at normal and high DPI, and check representative filetypes in Explorer. CI does not claim automated GUI confirmation.
 - Historical artwork inventories and exact duplicate-hash evidence are in `docs/asset-inventory.md` and `docs/asset-duplicates.csv`. Do not delete unique artwork merely because it is outside the current release matrix.
 
@@ -68,7 +69,7 @@ The checker must remain idempotent: no duplicate PRs or branches for the same re
 
 - `.github/workflows/ci.yml` builds and tests PR changes using Windows x86/x64 7-Zip binaries. The requirements include Node tests, PE/resource integrity, package matrix completeness, runtime archive smoke tests and generated visual reports.
 - The PR workflow runs for **all** PRs against `master` without path filters; required CI checks must never be skipped for docs-only PRs.
-- `scripts/gui-smoke.ps1` runs on the hosted Windows runner after package verification. On x86/x64 it tests the official baseline and native Ribbon with the official DLL and each themed DLL, opens Tools → Options with the command ID derived from the pinned executable's `RT_MENU` resource, confirms the Options window belongs to the test process, dismisses it without changing settings, and verifies that File Manager remains running. It also checks startup for every package theme. The optional `-LegacyRibbonRoot <path> -BaselineOnly` mode compares an existing resedit-patched Ribbon against the official control. The script does not automate Ribbon appearance or DPI validation.
+- `scripts/gui-smoke.ps1` runs on the hosted Windows runner after package verification. On x86/x64 it tests the official baseline and native Ribbon with the official DLL and each themed DLL, opens Tools → Options with the command ID derived from the pinned executable's `RT_MENU` resource, discovers all UI Automation TabItems, selects and verifies each, checks File Manager survival after every selection, and invokes Cancel to close without saving. It also checks startup for every package theme. The optional `-LegacyRibbonRoot <path> -BaselineOnly` mode compares an older Ribbon patch against the official control. The script does not automate Ribbon appearance or DPI validation.
 - `.github/workflows/clamav-scan.yml` is a reusable Ubuntu 26.04 ClamAV gate required for both PR checks and the merged-`master` release.
 - ClamAV 1.5.0 or later checks independently verified official `main`, `daily`, and `bytecode` signature databases. The daily database must be no older than 48 hours; the main/bytecode databases may be older because they update at different rates.
 - The `clamav-freshclam` daemon must not race the foreground updater. Standalone `clamscan` does not require `clamd`. The workflow disables the unused `NotifyClamd` configuration before running the update; do not remove this fix.

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { sha256, verifyAsset, validateManifest, parseRes, inspectDib, findMenuCommand, diffResourceMaps, readJson } from '../scripts/core.mjs';
+import { sha256, verifyAsset, validateManifest, parseRes, inspectDib, parseIco, parseGroupIcon, buildGroupIcon, allocateIconImages, validateIconResourceGraph, validateResourceOperations, parseVersionInfo, findMenuCommand, diffResourceMaps, readJson } from '../scripts/core.mjs';
 import { compareVersions, lockNeedsUpdate, parseVersion, publicationAction, releaseTag, selectReleaseAssets } from '../scripts/upstream.mjs';
-import { generateVisualReports, markWindowsIntegrationPassed } from '../scripts/reports.mjs';
+import { generateVisualReports, markWindowsIntegrationPassed, markWindowsGuiSmokePassed } from '../scripts/reports.mjs';
 import { validateReleaseEnvironment } from '../scripts/verify-release-environment.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -73,6 +73,80 @@ test('DIB validation rejects a declared image size beyond the supplied payload',
   dib.writeUInt32LE(0, 20);
   assert.equal(inspectDib(dib).pixelBytes, 4);
 });
+test('ICO parser preserves all source image payloads and validates every mapped theme file', () => {
+  const manifest = readJson(path.join(root, 'config/themes.json'));
+  const counts = {};
+  const uniquePayloadCounts = {};
+  for (const theme of manifest.filetypes) {
+    const payloads = [];
+    let count = 0;
+    for (const [groupId, filename] of theme.groups) {
+      const images = parseIco(fs.readFileSync(path.join(root, theme.artwork, filename)), `${theme.slug}/${filename}`);
+      count += images.length;
+      payloads.push(...images.map((image) => image.bin.toString('hex')));
+      assert.ok(images.every((image) => image.bin.length === image.bytesInRes));
+      assert.ok(images.every((image) => image.info.width > 0 && image.info.height > 0));
+      assert.equal(groupId >= 0 && groupId < 27, true);
+    }
+    counts[theme.slug] = count;
+    uniquePayloadCounts[theme.slug] = new Set(payloads).size;
+  }
+  assert.deepEqual(counts, { windows10: 215, fluent: 108, 'fluent-blue': 108 });
+  assert.deepEqual(uniquePayloadCounts, { windows10: 215, fluent: 103, 'fluent-blue': 101 });
+  const ico = fs.readFileSync(path.join(root, manifest.filetypes[1].artwork, manifest.filetypes[1].groups[0][1]));
+  assert.throws(() => parseIco(ico.subarray(0, ico.length - 1)), /invalid ICO image directory entry|truncated or empty/);
+  assert.throws(() => parseIco(Buffer.alloc(6)), /invalid ICONDIR/);
+});
+test('group icon parsing and construction keeps numeric image ordinals and rejects malformed graphs', () => {
+  const image = { widthByte: 48, heightByte: 48, colorCount: 0, reserved: 0, planes: 1, bitsPerPixel: 32, bytesInRes: 123, id: 21 };
+  const group = buildGroupIcon([image]);
+  assert.deepEqual(parseGroupIcon(group), [image]);
+  const duplicate = Buffer.alloc(6 + 28);
+  group.copy(duplicate, 0, 0, 20); group.copy(duplicate, 20, 6, 20);
+  duplicate.writeUInt16LE(2, 4);
+  assert.throws(() => parseGroupIcon(duplicate), /duplicate RT_ICON ID/);
+  assert.throws(() => parseGroupIcon(group.subarray(0, group.length - 1)), /malformed GRPICONDIR/);
+  assert.throws(() => buildGroupIcon([{ ...image, id: 0 }]), /Invalid or duplicate RT_ICON ID/);
+});
+test('icon image allocation deduplicates exact bytes and skips occupied IDs', () => {
+  const allocated = allocateIconImages([Buffer.from('alpha'), Buffer.from('beta'), Buffer.from('alpha')], [1, 3]);
+  assert.deepEqual(allocated.ids, [2, 4, 2]);
+  assert.equal(allocated.duplicatePayloadCount, 1);
+  assert.deepEqual(allocated.images.map((image) => image.id), [2, 4]);
+  assert.throws(() => allocateIconImages([Buffer.from('a')], [0]), /Invalid reserved RT_ICON ID/);
+});
+test('icon resource graph validation rejects dangling references and orphan images', () => {
+  const group = buildGroupIcon([{ widthByte: 16, heightByte: 16, colorCount: 0, reserved: 0, planes: 1, bitsPerPixel: 32, bytesInRes: 4, id: 1 }]);
+  assert.throws(() => validateIconResourceGraph([{ type: 14, id: 1, lang: 1033, bin: group }]), /Dangling RT_ICON reference 3:1:1033/);
+  assert.throws(() => validateIconResourceGraph([{ type: 3, id: 1, lang: 1033, bin: Buffer.from([1]) }]), /Orphan RT_ICON resource/);
+});
+test('native resource operation plans reject duplicate keys, unsupported types, bad IDs and empty payloads', () => {
+  const operations = validateResourceOperations([
+    { type: 14, id: '0', language: 1033, action: 'update', bin: Buffer.from([1, 2]) },
+    { type: 3, id: 11, language: 1033, action: 'delete', bin: null },
+  ]);
+  assert.equal(operations.length, 2);
+  assert.throws(() => validateResourceOperations([
+    { type: 3, id: 1, language: 1033, action: 'delete', bin: null },
+    { type: 3, id: 1, language: 1033, action: 'update', bin: Buffer.from([1]) },
+  ]), /Duplicate native resource operation/);
+  assert.throws(() => validateResourceOperations([{ type: 16, id: 1, language: 1033, action: 'delete', bin: null }]), /Unsupported native resource type/);
+  assert.throws(() => validateResourceOperations([{ type: 3, id: 65536, language: 1033, action: 'delete', bin: null }]), /Invalid numeric resource ordinal/);
+  assert.throws(() => validateResourceOperations([{ type: 14, id: 0, language: 1033, action: 'delete', bin: null }]), /cannot distinguish ordinal zero/);
+  assert.throws(() => validateResourceOperations([{ type: 3, id: 1, language: 1033, action: 'update', bin: Buffer.alloc(0) }]), /requires nonempty binary data/);
+  assert.throws(() => validateResourceOperations([{ type: 3, id: 1, language: 1033, action: 'delete', bin: Buffer.from([1]) }]), /must not include payload data/);
+});
+test('VERSIONINFO parser reads a verified VS_FIXEDFILEINFO without resedit', () => {
+  const version = Buffer.alloc(92);
+  version.writeUInt16LE(version.length, 0); version.writeUInt16LE(52, 2); version.writeUInt16LE(0, 4);
+  Buffer.from('VS_VERSION_INFO\0', 'utf16le').copy(version, 6);
+  const fixed = 40;
+  version.writeUInt32LE(0xfeef04bd, fixed); version.writeUInt32LE(0x00010000, fixed + 4);
+  version.writeUInt32LE((26 << 16) | 4, fixed + 8); version.writeUInt32LE(0, fixed + 12);
+  assert.deepEqual(parseVersionInfo(version), { fileVersionMS: (26 << 16) | 4, fileVersionLS: 0 });
+  version.writeUInt32LE(0, fixed);
+  assert.throws(() => parseVersionInfo(version), /VS_FIXEDFILEINFO signature/);
+});
 test('pinned MENUEX Tools > Options item resolves to its verified numeric command ID', () => {
   const menu = Buffer.alloc(128);
   let offset = 12;
@@ -90,6 +164,8 @@ test('resource diff classifies added, removed, and replaced payloads', () => {
   const after = new Map([['3:1:1033', Buffer.from('new')], ['3:3:1033', Buffer.from('added')], ['3:2:1033', Buffer.from('keep')]]);
   const changes = diffResourceMaps(before, after, (key) => key === '3:1:1033');
   assert.deepEqual(changes.map((x) => [x.id, x.change, x.classification]), [[1, 'replaced', 'expected'], [3, 'added', 'unexpected']]);
+  const named = diffResourceMaps(new Map([['14:s0:1033', Buffer.from('old')]]), new Map([['14:s0:1033', Buffer.from('new')]]));
+  assert.deepEqual([named[0].type, named[0].id, named[0].idType, named[0].language], [14, '0', 'name', 1033]);
 });
 test('release revision tags and publication are idempotent and reject mismatched state', () => {
   const tag = releaseTag('26.04', 1); assert.equal(tag, '7zip-26.04-theme.1');
@@ -126,4 +202,8 @@ test('Windows integration results distinguish runtime-tested filetypes from Ribb
   assert.equal(updated.results[1].functionalTests.status, 'passed-x86-x64-archive-runtime-smoke');
   assert.equal(updated.results[2].functionalTests.status, 'passed-x86-x64-package-integrity; GUI-smoke-pending');
   assert.equal(diff.results[0].functionalTests.status, 'pending-windows-integration');
+  const gui = markWindowsGuiSmokePassed(updated, manifest);
+  assert.equal(gui.results[0].functionalTests.status, 'passed-x86-x64-archive-runtime-smoke; passed-x86-x64-options-tabs');
+  assert.equal(gui.results[2].functionalTests.status, 'passed-x86-x64-package-integrity; passed-x86-x64-options-tabs');
+  assert.deepEqual(markWindowsGuiSmokePassed(gui, manifest), gui);
 });
