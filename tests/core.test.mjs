@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { sha256, verifyAsset, validateManifest, parseRes, diffResourceMaps, readJson } from '../scripts/core.mjs';
+import { sha256, verifyAsset, validateManifest, parseRes, inspectDib, findMenuCommand, diffResourceMaps, readJson } from '../scripts/core.mjs';
 import { compareVersions, lockNeedsUpdate, parseVersion, publicationAction, releaseTag, selectReleaseAssets } from '../scripts/upstream.mjs';
 import { generateVisualReports, markWindowsIntegrationPassed } from '../scripts/reports.mjs';
 import { validateReleaseEnvironment } from '../scripts/verify-release-environment.mjs';
@@ -58,7 +58,32 @@ test('compiled Ribbon .res records extract exactly one RT_BITMAP with its langua
     assert.equal(entry.type, 2); assert.equal(entry.id, id); assert.equal(entry.lang, 1033); assert.ok(entry.bin.length > 40);
     assert.throws(() => parseRes(payload.subarray(0, payload.length - 1), id));
     assert.throws(() => parseRes(payload, id + 1));
+    assert.equal(entry.dib.bitsPerPixel, id === 190 ? 1 : 32);
+    assert.equal(entry.dib.compression, 0);
+    assert.ok(entry.dib.pixelBytes > 0);
+    assert.equal(entry.dib.extraDeclaredImageBytes, id === 190 ? 0 : 2);
+    assert.equal(entry.dib.trailingBytes, 0);
   }
+});
+test('DIB validation rejects a declared image size beyond the supplied payload', () => {
+  const dib = Buffer.alloc(44);
+  dib.writeUInt32LE(40, 0); dib.writeInt32LE(1, 4); dib.writeInt32LE(1, 8);
+  dib.writeUInt16LE(1, 12); dib.writeUInt16LE(24, 14); dib.writeUInt32LE(0, 16); dib.writeUInt32LE(12, 20);
+  assert.throws(() => inspectDib(dib), /pixel array exceeds payload boundary/);
+  dib.writeUInt32LE(0, 20);
+  assert.equal(inspectDib(dib).pixelBytes, 4);
+});
+test('pinned MENUEX Tools > Options item resolves to its verified numeric command ID', () => {
+  const menu = Buffer.alloc(128);
+  let offset = 12;
+  menu.writeUInt16LE(1, 0); menu.writeUInt16LE(4, 2); menu.writeUInt32LE(0, 4);
+  menu.writeUInt32LE(0, offset); menu.writeUInt32LE(0, offset + 4); menu.writeUInt32LE(504, offset + 8); menu.writeUInt16LE(0x81, offset + 12); offset += 14;
+  Buffer.from('&Tools\0', 'utf16le').copy(menu, offset); offset += Buffer.byteLength('&Tools\0', 'utf16le');
+  offset = (offset + 3) & ~3; menu.writeUInt32LE(0, offset); offset += 4;
+  menu.writeUInt32LE(0, offset); menu.writeUInt32LE(0, offset + 4); menu.writeUInt32LE(900, offset + 8); menu.writeUInt16LE(0x80, offset + 12); offset += 14;
+  Buffer.from('&Options...\0', 'utf16le').copy(menu, offset); offset += Buffer.byteLength('&Options...\0', 'utf16le');
+  assert.equal(findMenuCommand(menu.subarray(0, offset), 'Tools', 'Options...'), 900);
+  assert.throws(() => findMenuCommand(menu.subarray(0, offset - 2), 'Tools', 'Options...'));
 });
 test('resource diff classifies added, removed, and replaced payloads', () => {
   const before = new Map([['3:1:1033', Buffer.from('old')], ['3:2:1033', Buffer.from('keep')]]);

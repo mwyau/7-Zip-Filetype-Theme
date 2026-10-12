@@ -14,7 +14,7 @@ This is the operational guide for contributors and coding agents working on `mwy
 ## Build architecture
 
 - Node.js 22 LTS and npm; `package-lock.json` pins dependencies.
-- `resedit-js` replaces Resource Hacker and the Node scripts replace Apache Ant. Neither an installed Windows 7-Zip nor an Ant/Resource Hacker executable is a build prerequisite.
+- `resedit-js` patches filetype icon groups in `7z.dll`; the Ribbon updater uses a small PowerShell/C# helper with `BeginUpdateResourceW`, `UpdateResourceW`, and `EndUpdateResourceW` on a staged `7zFM.exe`. The Node scripts replace Apache Ant. Neither an installed Windows 7-Zip nor an Ant/Resource Hacker executable is a build prerequisite.
 - `config/themes.json` is the sole resource mapping. Do not duplicate architecture-specific mappings in scripts.
 - Filetype icon-group IDs **0–26**, language **1033**, target `7z.dll`. Ribbon bitmap IDs **100–106, 150–156, 190**, language **1033**, target `7zFM.exe`.
 - Ribbon `.res` inputs are compiled resource containers. Parse and validate their boundaries, declared type/ID/language and payload; never feed the complete `.res` container into a raw bitmap replacement.
@@ -68,7 +68,7 @@ The checker must remain idempotent: no duplicate PRs or branches for the same re
 
 - `.github/workflows/ci.yml` builds and tests PR changes using Windows x86/x64 7-Zip binaries. The requirements include Node tests, PE/resource integrity, package matrix completeness, runtime archive smoke tests and generated visual reports.
 - The PR workflow runs for **all** PRs against `master` without path filters; required CI checks must never be skipped for docs-only PRs.
-- `scripts/gui-smoke.ps1` runs on the hosted Windows runner after package verification, copies each official upstream installation to an isolated temporary folder, replaces the themed `7z.dll` or Ribbon `7zFM.exe`, starts `7zFM.exe` on x86/x64, verifies that it stays running for three seconds, then terminates it and removes the folder. This tests startup only: it is not automated Ribbon appearance/DPI validation.
+- `scripts/gui-smoke.ps1` runs on the hosted Windows runner after package verification. On x86/x64 it tests the official baseline and native Ribbon with the official DLL and each themed DLL, opens Tools → Options with the command ID derived from the pinned executable's `RT_MENU` resource, confirms the Options window belongs to the test process, dismisses it without changing settings, and verifies that File Manager remains running. It also checks startup for every package theme. The optional `-LegacyRibbonRoot <path> -BaselineOnly` mode compares an existing resedit-patched Ribbon against the official control. The script does not automate Ribbon appearance or DPI validation.
 - `.github/workflows/clamav-scan.yml` is a reusable Ubuntu 26.04 ClamAV gate required for both PR checks and the merged-`master` release.
 - ClamAV 1.5.0 or later checks independently verified official `main`, `daily`, and `bytecode` signature databases. The daily database must be no older than 48 hours; the main/bytecode databases may be older because they update at different rates.
 - The `clamav-freshclam` daemon must not race the foreground updater. Standalone `clamscan` does not require `clamd`. The workflow disables the unused `NotifyClamd` configuration before running the update; do not remove this fix.

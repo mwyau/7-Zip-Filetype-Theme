@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { readJson, validateManifest, patchIcons, patchBitmaps, validatePe, sha256 } from './core.mjs';
+import { readJson, validateManifest, patchIcons, readRibbonBitmaps, verifyRibbonBitmaps, findMenuCommandInExecutable, validatePe, sha256 } from './core.mjs';
 import { generateVisualReports } from './reports.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,9 +20,13 @@ const revision = Number(process.env.THEME_REVISION || release.themeRevision);
 const tag = `7zip-${lock.version}-theme.${revision}`;
 const report = { upstreamVersion: lock.version, releaseId: lock.releaseId, tag, artifacts: [], results: [] };
 const expectedMachines = { x86: 0x014c, x64: 0x8664 };
+let optionsMenuCommand = null;
 for (const [arch, asset] of Object.entries(lock.assets)) {
   const source = path.join(buildRoot, 'upstream', arch);
   const fm = fs.readFileSync(path.join(source, '7zFM.exe'));
+  const menuCommand = findMenuCommandInExecutable(fm, manifest.resourceLanguage, 'Tools', 'Options...');
+  if (optionsMenuCommand && JSON.stringify(optionsMenuCommand) !== JSON.stringify(menuCommand)) throw new Error(`7zFM.exe ${arch} Tools > Options menu differs from the other architecture`);
+  optionsMenuCommand = menuCommand;
   for (const theme of manifest.filetypes) {
     const original = fs.readFileSync(path.join(source, '7z.dll'));
     const patched = patchIcons(original, theme, manifest.resourceLanguage);
@@ -39,7 +43,34 @@ for (const [arch, asset] of Object.entries(lock.assets)) {
     report.artifacts.push(await packageFolder(stage, name, outRoot, source, arch, theme.slug));
   }
   const ribbon = manifest.ribbon;
-  const ribbonPatch = patchBitmaps(fm, (id) => path.join(root, ribbon.artwork, `Bitmap${id}.res`), ribbon.bitmaps, manifest.resourceLanguage);
+  if (process.platform !== 'win32') throw new Error('Windows Ribbon resource updates require the native Win32 resource APIs.');
+  const bitmapRecords = readRibbonBitmaps((id) => path.join(root, ribbon.artwork, `Bitmap${id}.res`), ribbon.bitmaps, manifest.resourceLanguage);
+  const nativeRoot = path.join(buildRoot, 'native-ribbon', arch), payloadRoot = path.join(nativeRoot, 'payloads');
+  fs.mkdirSync(payloadRoot, { recursive: true });
+  const stagedExecutable = path.join(nativeRoot, '7zFM.exe');
+  fs.copyFileSync(path.join(source, '7zFM.exe'), stagedExecutable);
+  const updates = bitmapRecords.map((record) => {
+    const payload = path.join(payloadRoot, `Bitmap${record.id}.bin`);
+    fs.writeFileSync(payload, record.bin);
+    return { id: record.id, language: record.lang, path: payload };
+  });
+  const updateManifest = path.join(nativeRoot, 'updates.json');
+  fs.writeFileSync(updateManifest, `${JSON.stringify({ resources: updates }, null, 2)}\n`);
+  const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const updater = path.join(root, 'scripts/update-ribbon-resources.ps1');
+  const applyNativeUpdate = (executable) => {
+    const result = spawnSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', updater, '-Executable', executable, '-Manifest', updateManifest], { cwd: root, windowsHide: true, encoding: 'utf8' });
+    if (result.error || result.status !== 0) throw new Error(`Native Ribbon resource update failed for ${arch}: ${result.error?.message || result.stderr || result.stdout}`);
+  };
+  applyNativeUpdate(stagedExecutable);
+  const ribbonOutput = fs.readFileSync(stagedExecutable);
+  const ribbonPatch = verifyRibbonBitmaps(fm, ribbonOutput, bitmapRecords, ribbon.bitmaps, manifest.resourceLanguage);
+  const repeatExecutable = path.join(nativeRoot, 'repeat.exe');
+  fs.copyFileSync(path.join(source, '7zFM.exe'), repeatExecutable);
+  applyNativeUpdate(repeatExecutable);
+  const repeatOutput = fs.readFileSync(repeatExecutable);
+  verifyRibbonBitmaps(fm, repeatOutput, bitmapRecords, ribbon.bitmaps, manifest.resourceLanguage);
+  if (!ribbonOutput.equals(repeatOutput)) throw new Error(`${arch}/${ribbon.slug}: identical native resource updates produced different executable bytes`);
   if (ribbonPatch.machine !== expectedMachines[arch]) throw new Error(`${arch}/${ribbon.slug}: wrong PE machine`);
   const unexpected = ribbonPatch.changes.filter((item) => item.classification !== 'expected');
   if (unexpected.length) throw new Error(`${arch}/${ribbon.slug}: unexpected resource changes: ${JSON.stringify(unexpected)}`);
@@ -49,6 +80,8 @@ for (const [arch, asset] of Object.entries(lock.assets)) {
   report.results.push({ upstreamVersion: lock.version, releaseId: lock.releaseId, architecture: arch, theme: ribbon.name, inputSha256: sha256(fm), outputSha256: sha256(ribbonPatch.output), changes: ribbonPatch.changes, peValidation: validatePe(ribbonPatch.output, expectedMachines[arch], lock.version), functionalTests: { status: 'gui-smoke-not-automated' } });
   report.artifacts.push(await packageFolder(stage, `${ribbon.slug}-${arch}.7z`, outRoot, source, arch, ribbon.slug));
 }
+if (!optionsMenuCommand) throw new Error('Could not identify the pinned 7zFM.exe Tools > Options menu command.');
+fs.writeFileSync(path.join(buildRoot, 'gui-options-command.json'), `${JSON.stringify(optionsMenuCommand, null, 2)}\n`);
 fs.mkdirSync(path.join(root, 'reports/generated'), { recursive: true });
 fs.writeFileSync(path.join(root, 'reports/generated/resource-diff.json'), `${JSON.stringify(report, null, 2)}\n`);
 fs.writeFileSync(path.join(root, 'reports/generated/build-provenance.json'), `${JSON.stringify({ upstream: lock, tag, node: process.version, sourceCommit: process.env.GITHUB_SHA || null, artifacts: report.artifacts }, null, 2)}\n`);
