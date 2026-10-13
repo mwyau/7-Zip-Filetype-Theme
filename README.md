@@ -6,7 +6,7 @@ Custom filetype icons and File Manager toolbar artwork for **official 7-Zip on W
 
 ## Previews
 
-**Fluent filetype icons** — one icon at different source sizes, followed by all 27 supported filetypes:
+**Fluent filetype icons** — the 7-Zip icon at four native sizes, followed by all 27 filetype icons:
 
 ![Fluent filetype icon preview](assets/filetypes/fluent/info/preview.png)
 
@@ -16,7 +16,7 @@ Custom filetype icons and File Manager toolbar artwork for **official 7-Zip on W
 
 ## Which file should I download?
 
-Choose the **theme** and the **architecture of your installed 7-Zip**. `x64` means 64-bit; `x86` means 32-bit. Packages are not interchangeable.
+Choose a theme for your installed 7-Zip architecture: `x64` for 64-bit or `x86` for 32-bit. Packages are not interchangeable.
 
 | Theme | 64-bit 7-Zip | 32-bit 7-Zip | Changes |
 |---|---|---|---|
@@ -38,10 +38,10 @@ Install **one** filetype theme; the Windows 11 Ribbon package is optional and ca
 
 **Restore:** Copy back the original files you backed up, or reinstall the matching official 7-Zip version. A later 7-Zip installation or upgrade may overwrite these patches; never use a patch built for a different version.
 
-## Safety and credits
+## Verification and credits
 
-These packages contain **modified copies** of official 7-Zip DLL/EXE files. Their original Authenticode signatures may be invalidated. The build pipeline checks resource integrity, runs functional tests and scans outputs with ClamAV; a clean scan does not guarantee a file is malware-free. Release [checksums and provenance](https://github.com/mwyau/7-Zip-Filetype-Theme/releases/latest) are available for verification.
+The packages contain modified copies of official 7-Zip binaries (`7z.dll` and `7zFM.exe`), which may invalidate their Authenticode signatures. CI checks resource integrity, runs functional tests, and scans binaries and archives with ClamAV. Release [checksums and build records](https://github.com/mwyau/7-Zip-Filetype-Theme/releases/latest) are available for verification.
 
-Windows 10 icons: [masamunecyrus](https://www.deviantart.com/masamunecyrus). Fluent and Fluent Blue icons: [Th3Z](https://www.deviantart.com/th3z). Original theme project: [Mr4Mike4](https://github.com/Mr4Mike4/7-Zip-Filetype-Theme). The original third-party artwork attribution is retained; distribution rights for all artwork have not been independently verified. See the [artwork rights review](docs/artwork-rights.md).
+Windows 10 icons: [masamunecyrus](https://www.deviantart.com/masamunecyrus). Fluent and Fluent Blue icons: [Th3Z](https://www.deviantart.com/th3z). Original theme project: [Mr4Mike4](https://github.com/Mr4Mike4/7-Zip-Filetype-Theme). Redistribution permission for the third-party artwork has not been independently verified. See [artwork attribution and rights](docs/artwork-rights.md).
 
 For development, testing, automation, and release maintenance, see [AGENTS.md](AGENTS.md).
