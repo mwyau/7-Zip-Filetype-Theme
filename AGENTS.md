@@ -46,14 +46,14 @@ Use `npm run check-upstream` for an upstream stable-release check. Review the re
 - The Windows 11 Ribbon preview is `assets/toolbar/windows11-ribbon/info/preview.png`.
 - Generated CI reports contain contact sheets, a human-readable summary and structured resource-diff JSON, including original/patched hashes, expected-change classification, PE verification and functional test status.
 - The Windows 11 Ribbon contact sheet decodes all 15 source DIBs into RGBA pixels before Sharp rendering, including the 32-bit color bitmaps and the 1-bit monochrome bitmap. The 32-bit resources declare two extra image bytes; the renderer reads only the validated scanline pixel array and leaves each source payload unchanged.
-- Manually inspect the patched `7zFM.exe` Ribbon appearance on Windows at normal and high DPI, and check representative filetypes in Explorer. CI does not claim automated GUI confirmation.
+- Manually inspect the patched `7zFM.exe` Ribbon appearance on Windows at normal and high DPI, and check representative filetypes in Explorer.
 - Historical artwork inventories and exact duplicate-hash evidence are in `docs/asset-inventory.md` and `docs/asset-duplicates.csv`. Do not delete unique artwork merely because it is outside the current release matrix.
 
 ## Scheduled upstream compatibility PRs
 
 `.github/workflows/check-upstream.yml` checks the official `ip7z/7zip` **latest stable** GitHub release daily at 08:00 UTC, and on `workflow_dispatch`. It compares version and official asset digests with `config/7zip.lock.json`.
 
-For a new release the workflow updates only pinned upstream release metadata on a bot-owned `update/7zip-<version>` branch and opens or updates one PR to `master`. No resource IDs are silently changed. An incompatible update should leave failing CI and reports on the PR, not publish a package. Do not auto-merge compatibility PRs.
+For a new release the workflow updates only pinned upstream release metadata on a bot-owned `update/7zip-<version>` branch and opens or updates one PR to `master`. Resource IDs require a separate, reviewed change. An incompatible update should fail CI on the PR without publishing a package. Do not auto-merge compatibility PRs.
 
 One-time fork setup:
 
@@ -75,7 +75,7 @@ The checker must remain idempotent: no duplicate PRs or branches for the same re
 - `scripts/setup-clamav-windows.ps1` downloads the official portable ClamAV 1.5.4 Windows x64 ZIP into ignored local build/cache directories and verifies its pinned SHA-256 and size. It makes no system-wide changes.
 - The scanner updates signatures with `freshclam.exe` using isolated configuration and database directories, verifies signed `main`, `daily`, and `bytecode` databases, and requires the daily database to be no older than 48 hours. CDN throttling, update failures, missing or stale signatures, and unverified databases fail without scanning.
 - The scanner enforces the eight generated PE binaries and eight distribution archives, checks each packaged binary against its raw build output, and scans all 16 inputs with archive scanning enabled. Scanner errors, detections, warnings and incomplete scan counts fail closed.
-- `clamav-report-<commit>` records the engine and signature versions, timestamps, scanned artifact SHA-256 hashes, file counts and verdict; the report is uploaded even if setup or scanning fails. A CLEAN result applies only to that scan engine/signature set and is not a malware-free guarantee.
+- `clamav-report-<commit>` records the engine and signature versions, timestamps, scanned artifact SHA-256 hashes, file counts and verdict; the report is uploaded even if setup or scanning fails.
 - Never allow a PR job to publish or expose release credentials. Do not run untrusted PR code in privileged `pull_request_target` jobs.
 
 ## Release workflow and owner approval
