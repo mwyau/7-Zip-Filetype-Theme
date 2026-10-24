@@ -39,13 +39,13 @@ jobs:
           - Error: ClamAV setup or scan did not complete.
           '@
       - name: Check out security scripts
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Download exact build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: scan-input-${{ github.sha }}
           path: scan-input
@@ -61,7 +61,7 @@ jobs:
           node scripts/clamav-scan.mjs --root scan-input --report clamav-report/report.json --clamav-dir $env:CLAMAV_DIRECTORY --database-dir $databaseDirectory --sevenzip scan-input/tools/7zr.exe
       - name: Upload scan audit report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clamav-report-${{ github.sha }}
           path: |
