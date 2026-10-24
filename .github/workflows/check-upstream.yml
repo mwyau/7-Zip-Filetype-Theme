@@ -11,19 +11,14 @@ permissions:
 jobs:
   check:
     name: Check official 7-Zip release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      update: ${{ steps.upstream.outputs.update }}
-      version: ${{ steps.upstream.outputs.version }}
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out master
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: master
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -35,40 +30,45 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-  compatibility-pr:
-    name: Open upstream compatibility PR
-    needs: check
-    if: needs.check.outputs.update == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - name: Verify GitHub App credentials
+      - name: Check compatibility PR credentials
+        id: credentials
+        if: steps.upstream.outputs.update == 'true'
         env:
           APP_ID: ${{ vars.APP_ID }}
           APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+        shell: bash
         run: |
-          if [ -z "$APP_ID" ] || [ -z "$APP_PRIVATE_KEY" ]; then
-            echo 'Missing APP_ID or APP_PRIVATE_KEY; configure the repository GitHub App before unattended compatibility PR creation.' >&2
-            exit 1
+          if [[ -n "$APP_ID" && -n "$APP_PRIVATE_KEY" ]]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
           fi
-      - name: Check out master
-        uses: actions/checkout@v4
-        with:
-          ref: master
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Update pinned release metadata
-        run: node scripts/check-upstream.mjs
+
+      - name: Explain missing PR credentials
+        if: steps.upstream.outputs.update == 'true' && steps.credentials.outputs.available == 'false'
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.upstream.outputs.version }}
+        run: |
+          echo "::warning title=Compatibility PR not created::Official 7-Zip $VERSION is newer than the pinned release, but APP_ID or APP_PRIVATE_KEY is not configured. Download the proposed lock file from this run, or configure the repository GitHub App to enable automatic PRs."
+          {
+            echo "### Official 7-Zip $VERSION update pending"
+            echo
+            echo "The release metadata was prepared, but **no compatibility PR was opened** because \`APP_ID\` (Actions variable) and/or \`APP_PRIVATE_KEY\` (Actions secret) is missing."
+            echo
+            echo "Download the proposed lock file from this run's artifact and open a PR manually, or configure the GitHub App described in [AGENTS.md](https://github.com/${GITHUB_REPOSITORY}/blob/master/AGENTS.md#scheduled-upstream-compatibility-prs)."
+            echo "The release remains pinned until a reviewed PR passes the Windows build and malware scan."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload pending upstream lock file
+        if: steps.upstream.outputs.update == 'true' && steps.credentials.outputs.available == 'false'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pending-7zip-${{ steps.upstream.outputs.version }}-lock
+          path: config/7zip.lock.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Create scoped GitHub App token
+        if: steps.upstream.outputs.update == 'true' && steps.credentials.outputs.available == 'true'
         uses: actions/create-github-app-token@v2
         id: app-token
         with:
@@ -77,23 +77,24 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
       - name: Create or update compatibility PR
-        uses: peter-evans/create-pull-request@v7
+        if: steps.upstream.outputs.update == 'true' && steps.credentials.outputs.available == 'true'
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.app-token.outputs.token }}
           base: master
-          branch: update/7zip-${{ needs.check.outputs.version }}
+          branch: update/7zip-${{ steps.upstream.outputs.version }}
           add-paths: config/7zip.lock.json
-          commit-message: 'Update official 7-Zip lock to ${{ needs.check.outputs.version }}'
-          title: 'Update 7-Zip themes to ${{ needs.check.outputs.version }}'
+          commit-message: 'Update official 7-Zip lock to ${{ steps.upstream.outputs.version }}'
+          title: 'Update 7-Zip themes to ${{ steps.upstream.outputs.version }}'
           body: |
-            Updates the pinned upstream release from the committed lock file to official 7-Zip ${{ needs.check.outputs.version }}.
+            Updates the pinned upstream release to official 7-Zip ${{ steps.upstream.outputs.version }}.
 
-            - Upstream release: https://github.com/ip7z/7zip/releases/tag/${{ needs.check.outputs.version }}
+            - Upstream release: https://github.com/ip7z/7zip/releases/tag/${{ steps.upstream.outputs.version }}
             - Matrix: Windows x86/x64; Windows 10, Fluent, Fluent Blue filetypes, and Windows 11 Ribbon
             - Resource compatibility and archive tests: pending required CI
-            - ClamAV: required after the complete Windows build; signature versions and verdict will be attached as a CI artifact
+            - ClamAV: required after the complete Windows build
             - Visual contact sheets and resource-diff report: uploaded by compatibility CI
-            - Manual intervention: review all compatibility checks and visually inspect the GUI before merging
+            - Manual intervention: review compatibility checks and visually inspect the GUI before merging
 
-            This PR is not auto-merged. A compatibility failure remains visible here with diagnostics and artifacts.
+            This PR is not auto-merged. Incompatible releases remain visible with CI diagnostics.
           draft: false
