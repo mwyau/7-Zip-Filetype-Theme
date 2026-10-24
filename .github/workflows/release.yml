@@ -30,11 +30,11 @@ jobs:
       proceed: ${{ steps.check.outputs.proceed }}
     steps:
       - name: Check out release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Check existing tag and release assets
@@ -52,7 +52,7 @@ jobs:
       contents: read
     steps:
       - name: Check out release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
       - name: Verify commit is current master
@@ -60,48 +60,11 @@ jobs:
         run: |
           git fetch origin master
           if ((git rev-parse origin/master) -ne $env:GITHUB_SHA) { throw 'Validated commit is not current master.' }
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+      - name: Build and verify release packages
+        uses: ./.github/actions/build-verify
         with:
-          node-version: 22
-          cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Check JavaScript syntax
-        run: npm run lint
-      - name: Run unit tests
-        run: npm test
-      - name: Build eight theme packages
-        run: npm run build
-      - name: Verify packages and archive operations
-        run: npm run verify
-      - name: Run mandatory Options tab UI smoke (x86/x64 matrix)
-        shell: pwsh
-        run: ./scripts/gui-smoke.ps1
-      - name: Generate visual reports
-        run: npm run report
-      - name: Stage binaries for malware scan
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path clamav-input/packages, clamav-input/dist, clamav-input/tools | Out-Null
-          Copy-Item -Path .build/packages/* -Destination clamav-input/packages -Recurse -Force
-          Copy-Item -Path dist/* -Destination clamav-input/dist -Force
-          Copy-Item -LiteralPath .cache/upstream/7zr.exe -Destination clamav-input/tools/7zr.exe
-      - name: Upload binaries for malware scan
-        uses: actions/upload-artifact@v4
-        with:
-          name: scan-input-${{ github.sha }}
-          path: clamav-input/**
-          if-no-files-found: error
-          retention-days: 90
-      - name: Upload release reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-reports-${{ github.sha }}
-          path: reports/generated/
-          if-no-files-found: warn
-          retention-days: 90
+          report-artifact: release-reports-${{ github.sha }}
+          report-retention-days: '90'
 
   clamav:
     name: Scan release packages for malware
@@ -118,11 +81,11 @@ jobs:
       contents: read
     steps:
       - name: Check out release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Check required reviewer and bypass policy
@@ -142,12 +105,12 @@ jobs:
       contents: write
     steps:
       - name: Check out release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Recheck release approval policy
@@ -156,12 +119,12 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node scripts/verify-release-environment.mjs
       - name: Download validated packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: scan-input-${{ github.sha }}
           path: release-input
       - name: Download malware scan report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: clamav-report-${{ github.sha }}
           path: clamav-report
