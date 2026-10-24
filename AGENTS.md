@@ -51,19 +51,17 @@ Use `npm run check-upstream` for an upstream stable-release check. Review the re
 
 ## Scheduled upstream compatibility PRs
 
-`.github/workflows/check-upstream.yml` checks the official `ip7z/7zip` **latest stable** GitHub release daily at 08:00 UTC, and on `workflow_dispatch`. It compares version and official asset digests with `config/7zip.lock.json`.
+`.github/workflows/check-upstream.yml` checks the official `ip7z/7zip` **latest stable** GitHub release daily at 08:00 UTC and on `workflow_dispatch`. It compares version and official asset digests with `config/7zip.lock.json`. The read-only checker prepares a proposed lock file and uploads it as a short-lived Actions artifact only when an update is needed.
 
-When an official update is available, the checker prepares only `config/7zip.lock.json` and, if the repository GitHub App is configured, creates or updates one PR on `update/7zip-<version>`. If `APP_ID` or `APP_PRIVATE_KEY` is absent, the scheduled check succeeds with an explicit warning and step summary and uploads the proposed lock file as a 30-day artifact; **no PR is created**. The maintainer must either enable the GitHub App or submit the proposed update manually. Resource IDs require a separate, reviewed change. An incompatible update must fail PR CI without publishing a package. Never auto-merge compatibility PRs.
+A separate, narrowly scoped job downloads the proposed lock file and uses the repository's built-in `GITHUB_TOKEN` to create or update one PR on `update/7zip-<version>` to `master`. This job does not install dependencies or execute the upstream-checking Node scripts with its write-capable token. Resource IDs require a separate reviewed change; never auto-merge compatibility PRs.
 
-To enable unattended compatibility PRs (optional for read-only upstream checks):
+**Repository setup (no custom secrets or GitHub App):**
 
-1. Enable Actions and scheduled workflows for the fork.
-2. Install a repository-scoped GitHub App with **Contents: read/write** and **Pull requests: read/write**.
-3. Configure Actions variable `APP_ID` and secret `APP_PRIVATE_KEY`. Use `actions/create-github-app-token` for unattended PR creation/CI; do not use a broad personal access token.
-4. Allow required GitHub-maintained actions and the explicitly required third-party `peter-evans/create-pull-request` action if retained in the workflow.
-5. Protect `master` with required PR CI checks and restrict force pushes; use the branch rules appropriate for a sole maintainer. Never require a second person's approving review without arranging another reviewer.
+1. Under **Settings → Actions → General → Workflow permissions**, enable **Allow GitHub Actions to create and approve pull requests**. The PR job explicitly requests `contents: write` and `pull-requests: write`; the upstream-checking job has `contents: read` only.
+2. GitHub may hold `pull_request` CI runs triggered by the built-in token in an approval-required state. Open each bot-created PR and select **Approve workflows to run** when prompted. This approval starts CI; it does not merge the PR.
+3. Protect `master` with required PR checks for the Windows build and **ClamAV**, prevent direct pushes and force pushes, and require passing checks before merging. Ensure the status-check sources and names match the actual CI runs. A PR without completed required checks must not be merged.
 
-The checker must remain idempotent: no duplicate PRs or branches for the same release, no changes for the currently pinned version. The `GITHUB_TOKEN` permissions for PR build jobs remain read-only.
+The checker must remain idempotent: no duplicate PRs for the same upstream release, no changes for the currently pinned version. An incompatible update should fail PR CI with diagnostics rather than publish a package.
 
 ## CI acceptance and malware scan
 
