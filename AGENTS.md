@@ -53,9 +53,9 @@ Use `npm run check-upstream` for an upstream stable-release check. Review the re
 
 `.github/workflows/check-upstream.yml` checks the official `ip7z/7zip` **latest stable** GitHub release daily at 08:00 UTC, and on `workflow_dispatch`. It compares version and official asset digests with `config/7zip.lock.json`.
 
-For a new release the workflow updates only pinned upstream release metadata on a bot-owned `update/7zip-<version>` branch and opens or updates one PR to `master`. Resource IDs require a separate, reviewed change. An incompatible update should fail CI on the PR without publishing a package. Do not auto-merge compatibility PRs.
+When an official update is available, the checker prepares only `config/7zip.lock.json` and, if the repository GitHub App is configured, creates or updates one PR on `update/7zip-<version>`. If `APP_ID` or `APP_PRIVATE_KEY` is absent, the scheduled check succeeds with an explicit warning and step summary and uploads the proposed lock file as a 30-day artifact; **no PR is created**. The maintainer must either enable the GitHub App or submit the proposed update manually. Resource IDs require a separate, reviewed change. An incompatible update must fail PR CI without publishing a package. Never auto-merge compatibility PRs.
 
-One-time fork setup:
+To enable unattended compatibility PRs (optional for read-only upstream checks):
 
 1. Enable Actions and scheduled workflows for the fork.
 2. Install a repository-scoped GitHub App with **Contents: read/write** and **Pull requests: read/write**.
@@ -68,6 +68,7 @@ The checker must remain idempotent: no duplicate PRs or branches for the same re
 ## CI acceptance and malware scan
 
 - `.github/workflows/ci.yml` builds and tests PR changes using Windows x86/x64 7-Zip binaries. The requirements include Node tests, PE/resource integrity, package matrix completeness, runtime archive smoke tests and generated visual reports.
+- `.github/actions/build-verify/action.yml` is the shared Windows build, test, package and report sequence used by PR CI and release validation; keep the checks, malware scan input and output artifact semantics identical in both callers. The executable project runtime remains Node.js 22 even though current GitHub actions use Node.js 24 internally.
 - The PR workflow runs for **all** PRs against `master` without path filters; required CI checks must never be skipped for docs-only PRs.
 - `scripts/gui-smoke.ps1` runs on the hosted Windows runner after package verification. On x86/x64 it tests the official baseline and native Ribbon with the official DLL and each themed DLL, opens Tools → Options with the command ID derived from the pinned executable's `RT_MENU` resource, and uses UI Automation to discover the Options window and its `SysTabControl32`. This 7-Zip control is exposed as a Pane without TabItem or SelectionItem patterns, so `SendMessageW` sends its standard left/right key messages to navigate; `TCM_GETCURSEL` independently verifies each selected index, while UI Automation reads the active page. The test checks that File Manager survives every selection, invokes Cancel without saving, and verifies process cleanup. The script does not automate Ribbon appearance, Explorer filetype appearance, or high-DPI rendering.
 - `scripts/integration.mjs` checks every 7z.dll icon group, IDs 0–26, on x86 and x64 for all three filetype themes. Windows `LoadImageW` loads each group at 16, 32, 48 and 256 pixels; group 0 is loaded by its named resource string, while groups 1–26 use numeric resource IDs. PE graph validation separately verifies every group-to-image reference.
