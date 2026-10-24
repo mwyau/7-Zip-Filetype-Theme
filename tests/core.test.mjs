@@ -41,8 +41,11 @@ test('lock update decision handles no update, same-version digest change, and ne
   assert.equal(lockNeedsUpdate(lock, extractorChanged), true);
   const releaseReplaced = structuredClone(same); releaseReplaced.releaseId += 1;
   assert.equal(lockNeedsUpdate(lock, releaseReplaced), true);
-  assert.equal(lockNeedsUpdate(lock, { ...same, version: '26.05' }), true);
-  assert.equal(lockNeedsUpdate(lock, { ...same, version: '26.03' }), false);
+  const [major, minor] = parseVersion(lock.version);
+  const newerVersion = `${major + 1}.${String(minor).padStart(2, '0')}`;
+  const olderVersion = `${major - 1}.${String(minor).padStart(2, '0')}`;
+  assert.equal(lockNeedsUpdate(lock, { ...same, version: newerVersion }), true);
+  assert.equal(lockNeedsUpdate(lock, { ...same, version: olderVersion }), false);
 });
 test('SHA-256 verification checks exact byte count and content', () => {
   const data = Buffer.from('fixture'); const expected = { size: data.length, sha256: sha256(data) };
