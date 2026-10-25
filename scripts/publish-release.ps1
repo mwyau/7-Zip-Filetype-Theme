@@ -36,6 +36,46 @@ $prov = Get-Content -Raw $provenance | ConvertFrom-Json
 if ($prov.sourceCommit -ne $commit) { throw 'Provenance source commit does not match the validated commit.' }
 if ($scanReport.verdict -ne 'CLEAN') { throw 'Refusing to publish without a CLEAN ClamAV verdict.' }
 
+# Keep the release title, notes, and asset labels consistent across new
+# releases and partial-asset recovery.
+$metadata = Get-Content -Raw 'config/release.json' | ConvertFrom-Json
+if ($prov.tag -ne $tag) { throw 'Build record tag does not match the requested release tag.' }
+$releaseTitle = "7-Zip $($prov.upstream.version) filetype and Ribbon themes (revision $($metadata.themeRevision))"
+$notesTemplate = @'
+Theme packages for official **7-Zip {VERSION}** on Windows (x86 and x64).
+
+The theme-building tools are a complete rewrite in Node.js and PowerShell using the original icon and toolbar artwork from [Mr4Mike4/7-Zip-Filetype-Theme](https://github.com/Mr4Mike4/7-Zip-Filetype-Theme) and its credited artists. The build replaces selected resources in binaries extracted from the matching official 7-Zip release.
+
+### Downloads
+
+Choose a package that matches your installed 7-Zip version and architecture:
+
+- **Windows 10**, **Fluent**, or **Fluent Blue**: filetype icons in `7z.dll`. Install one filetype theme.
+- **Windows 11 Ribbon**: File Manager toolbar graphics in `7zFM.exe`. This can be combined with a filetype theme of the same version and architecture.
+- **SHA256SUMS.txt**: checksums for the eight archives and build record.
+- **build-provenance.json**: source commit, pinned upstream binaries and artifact hashes.
+
+These are **replacement binaries, not 7-Zip installers**. Back up your original files before replacing them. The modified binaries invalidate the official Authenticode signatures.
+
+The Windows CI builds and verifies all eight packages, tests resource integrity and archive operations, runs File Manager Options smoke tests, and scans the packages with ClamAV. See the [installation instructions](https://github.com/mwyau/7-Zip-Filetype-Theme#installation) and [artwork attribution and rights](https://github.com/mwyau/7-Zip-Filetype-Theme/blob/master/docs/artwork-rights.md). Redistribution rights for third-party artwork have not been independently verified.
+'@
+$releaseNotes = $notesTemplate.Replace('{VERSION}', [string]$prov.upstream.version)
+$assetLabels = @{
+  'windows10-x64.7z' = 'Windows 10 filetype icons — x64'
+  'windows10-x86.7z' = 'Windows 10 filetype icons — x86'
+  'fluent-x64.7z' = 'Fluent filetype icons — x64'
+  'fluent-x86.7z' = 'Fluent filetype icons — x86'
+  'fluent-blue-x64.7z' = 'Fluent Blue filetype icons — x64'
+  'fluent-blue-x86.7z' = 'Fluent Blue filetype icons — x86'
+  'windows11-ribbon-x64.7z' = 'Windows 11 Ribbon toolbar — x64'
+  'windows11-ribbon-x86.7z' = 'Windows 11 Ribbon toolbar — x86'
+  'SHA256SUMS.txt' = 'SHA-256 checksums for release files'
+  'build-provenance.json' = 'Source commit, official inputs, and archive hashes'
+}
+foreach ($name in @($archives | ForEach-Object Name) + @('SHA256SUMS.txt', 'build-provenance.json')) {
+  if (-not $assetLabels.ContainsKey($name)) { throw "No release label defined for $name" }
+}
+
 $tagLine = @(git ls-remote origin "refs/tags/$tag")
 if ($LASTEXITCODE -ne 0) { throw 'Could not query the existing release tag.' }
 $peeledLine = @(git ls-remote origin "refs/tags/$tag^{}")
@@ -51,10 +91,10 @@ if ($tagExists) {
 $releaseJson = gh api "repos/$repository/releases/tags/$tag" 2>$null
 $releaseExists = $LASTEXITCODE -eq 0
 if (-not $releaseExists -and $tagExists -and $tagCommit -ne $commit) { throw 'Existing tag cannot be safely reused.' }
-$assets = @($archives | ForEach-Object { $_.FullName }) + @($checksums, $provenance)
+$assets = @($archives | ForEach-Object { "$($_.FullName)#$($assetLabels[$_.Name])" }) + @("$checksums#$($assetLabels['SHA256SUMS.txt'])", "$provenance#$($assetLabels['build-provenance.json'])")
 if ($releaseExists -and -not $tagExists) { throw 'Release object exists without its Git tag; refusing publication.' }
 if (-not $releaseExists) {
-  gh release create $tag @assets --target $commit --title "7-Zip $($prov.upstream.version) theme package $tag" --notes "This release contains modified 7-Zip binaries with third-party theme resources. They are not official untouched 7-Zip executables. The upstream Authenticode signature is invalidated. See build-provenance.json and SHA256SUMS.txt."
+  gh release create $tag @assets --target $commit --title $releaseTitle --notes $releaseNotes
   if ($LASTEXITCODE -ne 0) { throw 'Release creation/upload failed. A partial tag or release may exist; rerun safely after inspecting GitHub Release state.' }
 } else {
   $release = $releaseJson | ConvertFrom-Json
@@ -73,7 +113,7 @@ if (-not $releaseExists) {
   }
   $missing = @($wanted.Keys | Where-Object { -not $published.ContainsKey($_) })
   if ($missing.Count -gt 0) {
-    gh release upload $tag @($missing | ForEach-Object { Join-Path $dist $_ })
+    gh release upload $tag @($missing | ForEach-Object { "$(Join-Path $dist $_)#$($assetLabels[$_])" })
     if ($LASTEXITCODE -ne 0) { throw 'Partial release recovery upload failed. Existing matching assets were retained; rerun after inspection.' }
   } else { Write-Host "Release $tag already contains the exact validated asset set; publication is a no-op." }
 }
