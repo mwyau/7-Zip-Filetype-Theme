@@ -61,14 +61,14 @@ The Windows CI builds and verifies all eight packages, tests resource integrity 
 '@
 $releaseNotes = $notesTemplate.Replace('{VERSION}', [string]$prov.upstream.version)
 $assetLabels = @{
-  'windows10-x64.7z' = 'Windows 10 filetype icons — x64'
-  'windows10-x86.7z' = 'Windows 10 filetype icons — x86'
-  'fluent-x64.7z' = 'Fluent filetype icons — x64'
-  'fluent-x86.7z' = 'Fluent filetype icons — x86'
-  'fluent-blue-x64.7z' = 'Fluent Blue filetype icons — x64'
-  'fluent-blue-x86.7z' = 'Fluent Blue filetype icons — x86'
-  'windows11-ribbon-x64.7z' = 'Windows 11 Ribbon toolbar — x64'
-  'windows11-ribbon-x86.7z' = 'Windows 11 Ribbon toolbar — x86'
+  'windows10-x64.7z' = 'Windows 10 filetype icons - x64'
+  'windows10-x86.7z' = 'Windows 10 filetype icons - x86'
+  'fluent-x64.7z' = 'Fluent filetype icons - x64'
+  'fluent-x86.7z' = 'Fluent filetype icons - x86'
+  'fluent-blue-x64.7z' = 'Fluent Blue filetype icons - x64'
+  'fluent-blue-x86.7z' = 'Fluent Blue filetype icons - x86'
+  'windows11-ribbon-x64.7z' = 'Windows 11 Ribbon toolbar - x64'
+  'windows11-ribbon-x86.7z' = 'Windows 11 Ribbon toolbar - x86'
   'SHA256SUMS.txt' = 'SHA-256 checksums for release files'
   'build-provenance.json' = 'Source commit, official inputs, and archive hashes'
 }
