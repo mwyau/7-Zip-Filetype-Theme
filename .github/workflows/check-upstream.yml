@@ -69,20 +69,19 @@ jobs:
           base: master
           branch: update/7zip-${{ needs.check.outputs.version }}
           add-paths: config/7zip.lock.json
-          commit-message: 'Update official 7-Zip lock to ${{ needs.check.outputs.version }}'
-          title: 'Update 7-Zip themes to ${{ needs.check.outputs.version }}'
+          commit-message: 'Pin official 7-Zip ${{ needs.check.outputs.version }}'
+          title: 'Update theme packages for 7-Zip ${{ needs.check.outputs.version }}'
           body: |
-            Updates the pinned upstream release to official 7-Zip ${{ needs.check.outputs.version }}.
+            Pins the official [7-Zip ${{ needs.check.outputs.version }} release](https://github.com/ip7z/7zip/releases/tag/${{ needs.check.outputs.version }}) and its x86/x64 download hashes in `config/7zip.lock.json`.
 
-            - Upstream release: https://github.com/ip7z/7zip/releases/tag/${{ needs.check.outputs.version }}
-            - Matrix: Windows x86/x64; Windows 10, Fluent, Fluent Blue filetypes, and Windows 11 Ribbon
-            - Resource compatibility and archive tests: pending required CI
-            - ClamAV: required after the complete Windows build
-            - Visual contact sheets and resource-diff report: uploaded by compatibility CI
-            - CI approval: select **Approve workflows to run** on this PR when prompted by GitHub
-            - Manual review: inspect all compatibility checks and visually inspect the GUI before merging
+            The theme build is a complete rewrite in Node.js and PowerShell using the original icon and toolbar artwork. This PR updates the official binary inputs, not the artwork or build tools.
 
-            This PR is not auto-merged. Incompatible releases remain visible with CI diagnostics.
+            **Required before merging**
+            - Windows x86/x64: build all eight archives, verify modified resources, and run archive and File Manager smoke tests.
+            - ClamAV: scan the built binaries and archives.
+            - Review the resource-diff report and icon and Ribbon previews.
+
+            GitHub may require **Approve workflows to run** for a PR created by `GITHUB_TOKEN`. After merging, the release workflow validates the merged commit again. Publication requires approval of the protected `release` environment.
           draft: false
       - name: Explain CI approval required for bot PRs
         if: steps.pr.outputs.pull-request-number != ''
