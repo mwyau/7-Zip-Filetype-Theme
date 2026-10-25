@@ -1,6 +1,6 @@
 # 7-Zip Filetype Theme
 
-Custom filetype icons and File Manager toolbar artwork for **official 7-Zip on Windows**. This is a maintained fork of [Mr4Mike4/7-Zip-Filetype-Theme](https://github.com/Mr4Mike4/7-Zip-Filetype-Theme).
+Filetype icons and File Manager toolbar themes for **official 7-Zip on Windows**. The build tools are a complete rewrite in Node.js and PowerShell, using the original icon and toolbar artwork from [Mr4Mike4/7-Zip-Filetype-Theme](https://github.com/Mr4Mike4/7-Zip-Filetype-Theme) and its credited artists. Each package patches a binary from the matching official 7-Zip release.
 
 [**Download the latest release**](https://github.com/mwyau/7-Zip-Filetype-Theme/releases/latest) · [Official 7-Zip](https://www.7-zip.org/)
 
@@ -29,7 +29,7 @@ Install **one** filetype theme; the Windows 11 Ribbon package is optional and ca
 
 ## Installation
 
-1. Install [official 7-Zip](https://www.7-zip.org/) and verify that its **version exactly matches** the version named in the theme release (for example, 7-Zip 26.04). Check the installed architecture too.
+1. Install [official 7-Zip](https://www.7-zip.org/) and verify that its **version exactly matches** the version named in the theme release. Check the installed architecture too.
 2. Download the appropriate `.7z` theme package from the [latest release](https://github.com/mwyau/7-Zip-Filetype-Theme/releases/latest) and extract it to a temporary directory.
 3. Close 7-Zip File Manager and other running 7-Zip processes.
 4. Open the 7-Zip installation directory (typically `C:\Program Files\7-Zip\` for x64 or `C:\Program Files (x86)\7-Zip\` for x86). **Back up the original `7z.dll` and/or `7zFM.exe`** before replacing anything.
@@ -40,7 +40,7 @@ Install **one** filetype theme; the Windows 11 Ribbon package is optional and ca
 
 ## Verification and credits
 
-The packages contain modified copies of official 7-Zip binaries (`7z.dll` and `7zFM.exe`), which may invalidate their Authenticode signatures. CI checks resource integrity, runs functional tests, and scans binaries and archives with ClamAV. Release [checksums and build records](https://github.com/mwyau/7-Zip-Filetype-Theme/releases/latest) are available for verification.
+The packages replace official 7-Zip binaries (`7z.dll` or `7zFM.exe`) with resource-modified copies. The upstream Authenticode signatures are invalidated. CI checks resource integrity, runs functional tests, and scans binaries and archives with ClamAV. Release [checksums and build records](https://github.com/mwyau/7-Zip-Filetype-Theme/releases/latest) are available for verification.
 
 Windows 10 icons: [masamunecyrus](https://www.deviantart.com/masamunecyrus). Fluent and Fluent Blue icons: [Th3Z](https://www.deviantart.com/th3z). Original theme project: [Mr4Mike4](https://github.com/Mr4Mike4/7-Zip-Filetype-Theme). Redistribution permission for the third-party artwork has not been independently verified. See [artwork attribution and rights](docs/artwork-rights.md).
 
