@@ -1,6 +1,6 @@
 # Maintainer and coding-agent guide
 
-This is the operational guide for contributors and coding agents working on `mwyau/7-Zip-Filetype-Theme`. Keep `README.md` short and user-facing: supported releases, package choice, installation, previews, warnings, and attribution. Put build internals, maintenance procedures, release operations, and implementation details here instead.
+This is the operational guide for contributors and coding agents working on `mwyau/7-Zip-Filetype-Theme`. Keep `README.md` short and user-facing: supported releases, package choice, installation, previews, warnings, and attribution. See [release automation](docs/release-automation.md) for the current maintenance and publication steps.
 
 ## Project boundaries
 
@@ -53,7 +53,7 @@ Use `npm run check-upstream` for an upstream stable-release check. Review the re
 
 `.github/workflows/check-upstream.yml` checks the official `ip7z/7zip` **latest stable** GitHub release daily at 08:00 UTC and on `workflow_dispatch`. It compares version and official asset digests with `config/7zip.lock.json`. The read-only checker prepares a proposed lock file and uploads it as a short-lived Actions artifact only when an update is needed.
 
-A separate, narrowly scoped job downloads the proposed lock file and uses the repository's built-in `GITHUB_TOKEN` to create or update one PR on `update/7zip-<version>` to `master`. This job does not install dependencies or execute the upstream-checking Node scripts with its write-capable token. Resource IDs require a separate reviewed change; never auto-merge compatibility PRs.
+A separate, narrowly scoped job downloads the proposed lock file and uses the repository's built-in `GITHUB_TOKEN` to create or update one PR on `update/7zip-<version>` to `master`. This job does not install dependencies or execute the upstream-checking Node scripts with its write-capable token. Resource IDs require a separate reviewed change. Auto-merge may be enabled for future upstream-lock PRs only after normal PR CI can run without approval and both required checks are enforced; see [release automation](docs/release-automation.md).
 
 **Repository setup (no custom secrets or GitHub App):**
 
@@ -61,7 +61,7 @@ A separate, narrowly scoped job downloads the proposed lock file and uses the re
 2. GitHub may hold `pull_request` CI runs triggered by the built-in token in an approval-required state. Open each bot-created PR and select **Approve workflows to run** when prompted. This approval starts CI; it does not merge the PR.
 3. Protect `master` with required PR checks for the Windows build and **ClamAV**, prevent direct pushes and force pushes, and require passing checks before merging. Ensure the status-check sources and names match the actual CI runs. A PR without completed required checks must not be merged.
 
-The checker must remain idempotent: no duplicate PRs for the same upstream release, no changes for the currently pinned version. An incompatible update should fail PR CI with diagnostics rather than publish a package.
+The checker must not open duplicate PRs for the same upstream release or change the currently pinned version. Incompatible updates must fail PR CI and must not be merged or published.
 
 ## CI acceptance and malware scan
 
@@ -83,7 +83,7 @@ The checker must remain idempotent: no duplicate PRs for the same upstream relea
 
 Release tag format: `7zip-<upstream>-theme.<revision>`. `config/release.json` controls the theme revision; increment it when publishing genuinely new theme/build content against the same upstream version.
 
-Set up GitHub Environment `release` with owner `mwyau` as a **required reviewer** and **administrator bypass disabled**. If the repository owner approves their own triggered workflow, do not enable self-review prevention unless another eligible reviewer is available. `scripts/verify-release-environment.mjs` checks the environment policy both before and inside the publishing job.
+Set up GitHub Environment `release` with owner `mwyau` as a **required reviewer** and **administrator bypass disabled**. If the repository owner approves their own triggered workflow, do not enable self-review prevention unless another eligible reviewer is available. `scripts/verify-release-environment.mjs` checks the environment policy before and inside the publishing job. Keep this gate for the next automatic-merge trial; removing it later also requires updating the script and jobs (see [release automation](docs/release-automation.md)).
 
 The publication gate verifies the current `master` SHA, scanned byte hashes, package count, release tag and existing assets. Duplicate matching artifacts are a no-op; different existing tags/assets, partial input matrices and stale commits fail closed. Never retarget an existing release tag.
 
