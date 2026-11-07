@@ -1,16 +1,16 @@
 {
   "repository": "ip7z/7zip",
-  "version": "26.05",
-  "tag": "26.05",
-  "releaseId": 419568204,
-  "releaseUrl": "https://github.com/ip7z/7zip/releases/tag/26.05",
+  "version": "26.06",
+  "tag": "26.06",
+  "releaseId": 437539557,
+  "releaseUrl": "https://github.com/ip7z/7zip/releases/tag/26.06",
   "stable": true,
   "assets": {
     "x86": {
-      "filename": "7z2605.exe",
-      "url": "https://github.com/ip7z/7zip/releases/download/26.05/7z2605.exe",
-      "size": 1362132,
-      "sha256": "6435a470fe7c4769962dbed8a60c641ee21401c833ced06077c80e33e7845a5e",
+      "filename": "7z2606.exe",
+      "url": "https://github.com/ip7z/7zip/releases/download/26.06/7z2606.exe",
+      "size": 1359350,
+      "sha256": "5e38f80c3752de43887e7a99ad10668c14bf64dcc929a636510b54616ea7dec7",
       "machine": "0x014c",
       "binaries": [
         "7z.dll",
@@ -19,10 +19,10 @@
       ]
     },
     "x64": {
-      "filename": "7z2605-x64.exe",
-      "url": "https://github.com/ip7z/7zip/releases/download/26.05/7z2605-x64.exe",
-      "size": 1663506,
-      "sha256": "fd99e86f57d8f429ef5ed045bf98315af962e2309b0f1ba87a147a44c71647d0",
+      "filename": "7z2606-x64.exe",
+      "url": "https://github.com/ip7z/7zip/releases/download/26.06/7z2606-x64.exe",
+      "size": 1659704,
+      "sha256": "9b697f65ecc2d9b0152f5ee96d72dde522a7827690349d9307935dacf40f42ec",
       "machine": "0x8664",
       "binaries": [
         "7z.dll",
@@ -33,8 +33,8 @@
   },
   "extractor": {
     "filename": "7zr.exe",
-    "url": "https://github.com/ip7z/7zip/releases/download/26.05/7zr.exe",
-    "size": 602624,
-    "sha256": "9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7"
+    "url": "https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe",
+    "size": 600064,
+    "sha256": "e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc"
   }
 }
